@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>临期零食智能比价 Agent</title>
+<style>
+  :root{
+    --bg-0:#0b1020;--bg-1:#121a33;
+    --glass:rgba(255,255,255,.06);--glass-strong:rgba(255,255,255,.10);
+    --border:rgba(255,255,255,.12);
+    --text:#eaf0ff;--text-dim:#9aa6c8;
+    --accent:#6ee7ff;--accent-2:#a78bfa;
+    --good:#34d399;--warn:#fbbf24;--bad:#fb7185;
+    --shadow:0 10px 40px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    color:var(--text);
+    background:
+      radial-gradient(1200px 800px at 12% -10%,rgba(110,231,255,.18),transparent 60%),
+      radial-gradient(1000px 700px at 110% 10%,rgba(167,139,250,.20),transparent 55%),
+      radial-gradient(900px 700px at 50% 120%,rgba(52,211,153,.12),transparent 60%),
+      linear-gradient(180deg,var(--bg-0),var(--bg-1));
+    min-height:100vh;overflow-x:hidden;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.035;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+  .wrap{position:relative;z-index:1;max-width:1400px;margin:0 auto;padding:28px 24px 60px}
+
+  header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+  .logo{
+    width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-size:24px;
+    background:linear-gradient(135deg,rgba(110,231,255,.25),rgba(167,139,250,.25));
+    border:1px solid var(--border);box-shadow:var(--shadow);
+  }
+  h1{font-size:22px;margin:0;font-weight:700;letter-spacing:.5px}
+  .sub{color:var(--text-dim);font-size:13px;margin-top:2px}
+  .version{font-size:11px;color:var(--accent);background:rgba(110,231,255,.12);padding:2px 8px;border-radius:6px;margin-left:8px}
+
+  .baseline-bar{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    padding:12px 16px;border-radius:14px;margin-bottom:20px;
+    background:var(--glass);border:1px solid var(--border);
+    backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08),var(--shadow);
+  }
+  .baseline-bar .tag{font-size:12px;color:var(--text-dim)}
+  .baseline-bar .val{font-weight:700;color:var(--accent);font-size:15px}
+  .baseline-bar .src{color:var(--text-dim);font-size:13px}
+
+  .grid{display:grid;grid-template-columns:420px 1fr;gap:20px;align-items:start}
+  @media(max-width:960px){.grid{grid-template-columns:1fr}}
+
+  .card{
+    background:var(--glass);border:1px solid var(--border);border-radius:18px;padding:18px;
+    backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08),var(--shadow);
+  }
+  .card h2{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+  .card h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+
+  label{display:block;font-size:12px;color:var(--text-dim);margin:10px 0 4px}
+  input,select,textarea{
+    width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);
+    background:rgba(0,0,0,.25);color:var(--text);font-size:13px;outline:none;transition:.15s;
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(110,231,255,.15)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+
+  .btn{
+    cursor:pointer;border:none;border-radius:11px;padding:10px 14px;font-size:13px;font-weight:600;
+    transition:.15s;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#0b1020}
+  .btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  .btn-ghost{background:var(--glass-strong);color:var(--text);border:1px solid var(--border)}
+  .btn-ghost:hover{background:rgba(255,255,255,.14)}
+  .btn-del{background:transparent;color:var(--bad);border:1px solid rgba(251,113,133,.3);padding:6px 10px;font-size:12px}
+  .btn-del:hover{background:rgba(251,113,133,.12)}
+  .btn-row{display:flex;gap:10px;margin-top:14px}
+  .btn-sm{padding:6px 10px;font-size:12px;border-radius:8px}
+
+  .item-list{display:flex;flex-direction:column;gap:10px;margin-top:6px;max-height:none}
+  .item-box{
+    border:1px solid var(--border);border-radius:14px;padding:12px;
+    background:rgba(0,0,0,.18);position:relative;
+  }
+  .item-box .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .item-box .head .idx{font-size:12px;color:var(--accent);font-weight:700}
+  .empty-hint{color:var(--text-dim);font-size:13px;padding:18px;text-align:center;border:1px dashed var(--border);border-radius:12px}
+
+  /* 截图上传区 */
+  .upload-zone{
+    border:2px dashed var(--border);border-radius:14px;padding:28px 16px;text-align:center;
+    cursor:pointer;transition:.2s;position:relative;overflow:hidden;
+    background:rgba(0,0,0,.12);
+  }
+  .upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:rgba(110,231,255,.06)}
+  .upload-zone .icon{font-size:32px;margin-bottom:8px}
+  .upload-zone .hint{color:var(--text-dim);font-size:13px}
+  .upload-zone .hint b{color:var(--accent)}
+  .upload-zone input[type=file]{display:none}
+  .upload-zone .preview{
+    max-width:100%;max-height:180px;border-radius:10px;margin-top:10px;
+    border:1px solid var(--border);object-fit:contain;
+  }
+
+  /* OCR 文本输入 */
+  .ocr-text-toggle{font-size:12px;color:var(--accent);cursor:pointer;margin-top:10px;display:inline-block}
+  .ocr-text-toggle:hover{text-decoration:underline}
+  .ocr-text-area{margin-top:8px;display:none}
+  .ocr-text-area.show{display:block}
+
+  /* 字段确认卡片 */
+  .confirm-card{
+    border:1px solid var(--border);border-radius:14px;padding:14px;
+    background:rgba(110,231,255,.06);margin-top:12px;
+  }
+  .confirm-card .title{font-size:13px;font-weight:700;margin-bottom:10px;color:var(--accent)}
+  .field-row{
+    display:grid;grid-template-columns:90px 1fr 80px;gap:8px;align-items:center;
+    padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);
+  }
+  .field-row:last-child{border-bottom:none}
+  .field-row .flabel{font-size:12px;color:var(--text-dim)}
+  .field-row input,.field-row select{
+    padding:7px 9px;font-size:13px;
+  }
+  .conf-badge{
+    display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-align:center;
+  }
+  .conf-badge.high{background:rgba(52,211,153,.18);color:var(--good)}
+  .conf-badge.medium{background:rgba(251,191,36,.18);color:var(--warn)}
+  .conf-badge.low{background:rgba(251,113,133,.18);color:var(--bad)}
+  .confirm-actions{display:flex;gap:10px;margin-top:12px}
+
+  /* 结果区 */
+  .result-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:10px 8px;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:center}
+  th{text-align:right;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border)}
+  th.name,td.name{text-align:left;white-space:normal}
+  tbody tr{border-bottom:1px solid rgba(255,255,255,.05);transition:.15s}
+  tbody tr:hover{background:rgba(255,255,255,.04)}
+  .rank{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;font-size:12px;font-weight:700;background:var(--glass-strong)}
+  .rank.r1{background:linear-gradient(135deg,#fde68a,#f59e0b);color:#3b2a00}
+  .rank.r2{background:linear-gradient(135deg,#e5e7eb,#9ca3af);color:#1f2937}
+  .rank.r3{background:linear-gradient(135deg,#fbcfe8,#f472b6);color:#3b0a2a}
+
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+  .pill.good{background:rgba(52,211,153,.15);color:var(--good)}
+  .pill.warn{background:rgba(251,191,36,.15);color:var(--warn)}
+  .pill.bad{background:rgba(251,113,133,.15);color:var(--bad)}
+  .pill.info{background:rgba(110,231,255,.15);color:var(--accent)}
+
+  .rec-card{
+    margin-top:16px;border-radius:16px;padding:16px 18px;border:1px solid var(--border);
+    background:linear-gradient(135deg,rgba(110,231,255,.10),rgba(167,139,250,.10));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08),var(--shadow);
+  }
+  .rec-card .title{font-size:15px;font-weight:700;margin-bottom:8px}
+  .rec-card .reason{color:var(--text-dim);font-size:13px;line-height:1.7}
+  .rec-card ul{margin:8px 0 0;padding-left:18px;color:var(--text);font-size:13px;line-height:1.8}
+
+  .toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:rgba(20,26,48,.92);border:1px solid var(--border);color:var(--text);
+    padding:10px 18px;border-radius:12px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;z-index:50;
+    backdrop-filter:blur(12px);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .loading{opacity:.6;pointer-events:none}
+  .skeleton{color:var(--text-dim);font-size:13px;padding:30px;text-align:center}
+
+  /* Tab 切换 */
+  .tabs{display:flex;gap:0;margin-bottom:14px}
+  .tab-btn{
+    padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;
+    background:var(--glass-strong);color:var(--text-dim);border:1px solid var(--border);
+    transition:.15s;
+  }
+  .tab-btn:first-child{border-radius:10px 0 0 10px}
+  .tab-btn:last-child{border-radius:0 10px 10px 0}
+  .tab-btn.active{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#0b1020;border-color:transparent}
+  .tab-panel{display:none}
+  .tab-panel.active{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🍪</div>
+    <div>
+      <h1>临期零食智能比价 Agent <span class="version">V0.2</span></h1>
+      <div class="sub">上传截图 / 粘贴文本 → 自动提取字段 → 确认后比价 → 给出买/不买建议</div>
+    </div>
+  </header>
+
+  <div class="baseline-bar">
+    <span class="tag">历史最低克单价</span>
+    <span class="val" id="baselineVal">—</span>
+    <span class="src" id="baselineSrc"></span>
+    <span style="flex:1"></span>
+    <button class="btn btn-ghost btn-sm" onclick="openPref()">⚙️ 偏好</button>
+  </div>
+
+  <div class="grid">
+    <!-- 左侧输入 -->
+    <div class="card">
+      <h2><span class="dot"></span>商品输入</h2>
+
+      <!-- Tab 切换 -->
+      <div class="tabs">
+        <div class="tab-btn active" onclick="switchTab('manual')">手动输入</div>
+        <div class="tab-btn" onclick="switchTab('ocr')">截图识别</div>
+      </div>
+
+      <!-- 手动输入面板 -->
+      <div id="tabManual" class="tab-panel active">
+        <div id="itemList" class="item-list"></div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" onclick="addItem()">+ 添加商品</button>
+          <button class="btn btn-primary" onclick="compare()" style="flex:1">开始比价</button>
+        </div>
+      </div>
+
+      <!-- 截图识别面板 -->
+      <div id="tabOcr" class="tab-panel">
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+          <div class="icon">📸</div>
+          <div class="hint">点击或拖拽上传<b>商品截图</b></div>
+          <div class="hint" style="font-size:11px;margin-top:4px">支持 JPG / PNG / WebP</div>
+          <input type="file" id="fileInput" accept="image/*" onchange="handleFile(this.files[0])" />
+          <img id="previewImg" class="preview" style="display:none" />
+        </div>
+
+        <span class="ocr-text-toggle" onclick="toggleOcrText()">或者直接粘贴 OCR 文本</span>
+        <div class="ocr-text-area" id="ocrTextArea">
+          <textarea id="ocrInput" rows="4" placeholder="粘贴商品页面的文字内容，如：到手价19.9元 净含量500g 随机口味 保质期至2026-09-01"></textarea>
+          <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="extractFromText()">提取字段</button>
+        </div>
+
+        <!-- 字段确认区 -->
+        <div id="confirmArea" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- 右侧结果 -->
+    <div class="card">
+      <div class="result-head">
+        <h2 style="margin:0"><span class="dot"></span>比价结果</h2>
+        <span class="sub" id="resultCount"></span>
+      </div>
+      <div id="resultArea">
+        <div class="empty-hint">添加商品并点击「开始比价」，系统将输出排序推荐表。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 偏好设置弹窗 -->
+<div class="card" id="prefModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:60;width:420px;max-width:92vw">
+  <h2><span class="dot"></span>用户偏好</h2>
+  <label>喜欢的口味（逗号分隔）</label>
+  <input id="prefLiked" placeholder="如：原味,黑巧,抹茶" />
+  <label>不喜欢的口味（逗号分隔）</label>
+  <input id="prefDisliked" placeholder="如：辣味,芥末" />
+  <label>日均消耗量（克/天）</label>
+  <input id="prefIntake" type="number" step="1" value="20" />
+  <div class="btn-row">
+    <button class="btn btn-ghost" onclick="closePref()">取消</button>
+    <button class="btn btn-primary" style="flex:1" onclick="savePref()">保存</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let counter = 0;
+let extractedData = null; // 当前提取结果
+
+// ============================================================ //
+// Tab 切换
+// ============================================================ //
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+    b.classList.toggle('active', (tab==='manual'&&i===0)||(tab==='ocr'&&i===1));
+  });
+  document.getElementById('tabManual').classList.toggle('active', tab==='manual');
+  document.getElementById('tabOcr').classList.toggle('active', tab==='ocr');
+}
+
+// ============================================================ //
+// 手动输入
+// ============================================================ //
+function addItem(data){
+  counter++;
+  const id = counter;
+  data = data || {};
+  const box = document.createElement('div');
+  box.className = 'item-box';
+  box.dataset.id = id;
+  box.innerHTML = `
+    <div class="head">
+      <span class="idx">商品 #${id}</span>
+      <button class="btn btn-del" onclick="removeItem(${id})">删除</button>
+    </div>
+    <label>商品名称</label>
+    <input class="f-name" value="${data.name||''}" placeholder="如：奥利奥薄脆" />
+    <div class="row">
+      <div><label>实付价（元）</label><input class="f-price" type="number" step="0.01" value="${data.total_price??''}" placeholder="19.9" /></div>
+      <div><label>总克重（g）</label><input class="f-weight" type="number" step="1" value="${data.total_weight_g??''}" placeholder="500" /></div>
+    </div>
+    <div class="row-3">
+      <div><label>口味类型</label>
+        <select class="f-flavorType">
+          <option value="fixed">固定口味</option>
+          <option value="random">随机/混发</option>
+          <option value="unknown">未知</option>
+        </select>
+      </div>
+      <div><label>口味名称</label><input class="f-flavorName" value="${data.flavor_name||''}" placeholder="如：原味" /></div>
+      <div><label>数量（包）</label><input class="f-qty" type="number" value="${data.quantity??''}" placeholder="可选" /></div>
+    </div>
+    <label>到期日</label>
+    <input class="f-expiry" type="date" value="${data.expiry_date||''}" />
+  `;
+  document.getElementById('itemList').appendChild(box);
+  if(data.flavor_type) box.querySelector('.f-flavorType').value = data.flavor_type;
+}
+
+function removeItem(id){
+  const box = document.querySelector(`.item-box[data-id="${id}"]`);
+  if(box) box.remove();
+}
+
+function collectItems(){
+  const boxes = document.querySelectorAll('#tabManual .item-box');
+  const out = [];
+  boxes.forEach(b=>{
+    const name = b.querySelector('.f-name').value.trim();
+    const price = parseFloat(b.querySelector('.f-price').value);
+    const weight = parseFloat(b.querySelector('.f-weight').value);
+    if(!name || !price || !weight) return;
+    out.push({
+      name, total_price: price, total_weight_g: weight,
+      flavor_type: b.querySelector('.f-flavorType').value,
+      flavor_name: b.querySelector('.f-flavorName').value.trim() || null,
+      quantity: parseInt(b.querySelector('.f-qty').value) || null,
+      expiry_date: b.querySelector('.f-expiry').value || null,
+    });
+  });
+  return out;
+}
+
+// ============================================================ //
+// 截图上传 & OCR
+// ============================================================ //
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', e=>{e.preventDefault();uploadZone.classList.add('dragover')});
+uploadZone.addEventListener('dragleave', ()=>uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e=>{
+  e.preventDefault(); uploadZone.classList.remove('dragover');
+  if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+function handleFile(file){
+  if(!file) return;
+  if(!file.type.startsWith('image/')){toast('请上传图片文件');return}
+  // 预览
+  const reader = new FileReader();
+  reader.onload = e=>{
+    const img = document.getElementById('previewImg');
+    img.src = e.target.result; img.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+  // 上传提取
+  extractFromImage(file);
+}
+
+async function extractFromImage(file){
+  const area = document.getElementById('confirmArea');
+  area.style.display = 'block';
+  area.innerHTML = '<div class="skeleton">正在识别截图中的商品信息…</div>';
+  const fd = new FormData();
+  fd.append('file', file);
+  try{
+    const res = await fetch('/api/extract',{method:'POST',body:fd});
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.detail||'识别失败')}
+    const data = await res.json();
+    extractedData = data;
+    renderConfirmCard(data);
+  }catch(err){
+    area.innerHTML = `<div class="empty-hint" style="color:var(--bad)">识别失败：${err.message}<br><span style="font-size:12px">可尝试粘贴 OCR 文本手动提取</span></div>`;
+  }
+}
+
+function toggleOcrText(){
+  const el = document.getElementById('ocrTextArea');
+  el.classList.toggle('show');
+}
+
+async function extractFromText(){
+  const text = document.getElementById('ocrInput').value.trim();
+  if(!text){toast('请先粘贴文本');return}
+  const area = document.getElementById('confirmArea');
+  area.style.display = 'block';
+  area.innerHTML = '<div class="skeleton">正在从文本中提取字段…</div>';
+  try{
+    const res = await fetch('/api/extract_text',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text})
+    });
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.detail||'提取失败')}
+    const data = await res.json();
+    extractedData = data;
+    renderConfirmCard(data);
+  }catch(err){
+    area.innerHTML = `<div class="empty-hint" style="color:var(--bad)">提取失败：${err.message}</div>`;
+  }
+}
+
+// ============================================================ //
+// 字段确认卡片
+// ============================================================ //
+const FIELD_LABELS = {
+  total_price:'到手价', total_weight_g:'总克重', flavor_type:'口味类型',
+  flavor_name:'口味名称', expiry_date:'到期日', quantity:'数量', package_type:'包装类型'
+};
+const FLAVOR_OPTIONS = [{v:'fixed',l:'固定口味'},{v:'random',l:'随机/混发'},{v:'unknown',l:'未知'}];
+const PKG_OPTIONS = [{v:'unknown',l:'未知'},{v:'bag',l:'袋装'},{v:'box',l:'盒装'},{v:'bowl',l:'碗装'}];
+
+function confBadge(c){
+  const m={high:'high',medium:'medium',low:'low'};
+  const t={high:'✅ 高',medium:'⚠️ 中',low:'❓ 需确认'};
+  return `<span class="conf-badge ${m[c]||'low'}">${t[c]||'❓ 需确认'}</span>`;
+}
+
+function renderConfirmCard(data){
+  const area = document.getElementById('confirmArea');
+  area.style.display = 'block';
+  let html = '<div class="confirm-card"><div class="title">📋 识别结果 — 请确认后加入比价</div>';
+
+  // 商品名称（手动填）
+  html += `<div class="field-row"><span class="flabel">商品名称</span><input id="cf-name" placeholder="如：奥利奥薄脆" /><span class="conf-badge low">手动</span></div>`;
+
+  // 各字段
+  for(const [key,label] of Object.entries(FIELD_LABELS)){
+    const f = data[key] || {};
+    const val = f.value || '';
+    const conf = f.confidence || 'low';
+    if(key==='flavor_type'){
+      let opts = FLAVOR_OPTIONS.map(o=>`<option value="${o.v}" ${o.v===val?'selected':''}>${o.l}</option>`).join('');
+      html += `<div class="field-row"><span class="flabel">${label}</span><select id="cf-${key}">${opts}</select>${confBadge(conf)}</div>`;
+    } else if(key==='package_type'){
+      let opts = PKG_OPTIONS.map(o=>`<option value="${o.v}" ${o.v===val?'selected':''}>${o.l}</option>`).join('');
+      html += `<div class="field-row"><span class="flabel">${label}</span><select id="cf-${key}">${opts}</select>${confBadge(conf)}</div>`;
+    } else {
+      html += `<div class="field-row"><span class="flabel">${label}</span><input id="cf-${key}" value="${val}" placeholder="—" />${confBadge(conf)}</div>`;
+    }
+  }
+
+  // 原始文本折叠
+  if(data.raw_text){
+    html += `<details style="margin-top:10px"><summary style="font-size:12px;color:var(--text-dim);cursor:pointer">查看 OCR 原始文本</summary><pre style="font-size:11px;color:var(--text-dim);white-space:pre-wrap;margin:6px 0 0;padding:8px;background:rgba(0,0,0,.2);border-radius:8px;max-height:120px;overflow:auto">${escHtml(data.raw_text)}</pre></details>`;
+  }
+
+  html += `<div class="confirm-actions">
+    <button class="btn btn-ghost btn-sm" onclick="cancelConfirm()">取消</button>
+    <button class="btn btn-primary" style="flex:1" onclick="confirmAndAdd()">✓ 确认并加入比价</button>
+  </div>`;
+  html += '</div>';
+  area.innerHTML = html;
+}
+
+function cancelConfirm(){
+  document.getElementById('confirmArea').style.display = 'none';
+  extractedData = null;
+}
+
+function confirmAndAdd(){
+  const name = document.getElementById('cf-name').value.trim() || '未命名商品';
+  const price = parseFloat(document.getElementById('cf-total_price').value);
+  const weight = parseFloat(document.getElementById('cf-total_weight_g').value);
+  if(!price || !weight){toast('请至少填写价格和克重');return}
+
+  // 切换到手动输入 tab 并添加商品
+  switchTab('manual');
+  addItem({
+    name,
+    total_price: price,
+    total_weight_g: weight,
+    flavor_type: document.getElementById('cf-flavor_type').value,
+    flavor_name: document.getElementById('cf-flavor_name').value.trim() || null,
+    expiry_date: document.getElementById('cf-expiry_date').value || null,
+    quantity: parseInt(document.getElementById('cf-quantity').value) || null,
+  });
+
+  // 清理确认区
+  document.getElementById('confirmArea').style.display = 'none';
+  extractedData = null;
+  document.getElementById('previewImg').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+  toast('已加入比价列表');
+}
+
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ============================================================ //
+// 比价
+// ============================================================ //
+async function compare(){
+  const items = collectItems();
+  if(items.length===0){toast('请至少填写一个完整商品（名称、价格、克重）');return}
+  const area = document.getElementById('resultArea');
+  area.classList.add('loading');
+  area.innerHTML = '<div class="skeleton">正在计算克单价、口味系数与临期风险…</div>';
+  try{
+    const res = await fetch('/api/compare',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({items,save:true})
+    });
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.detail||'请求失败')}
+    const data = await res.json();
+    renderResults(data);
+    loadBaseline();
+  }catch(err){
+    area.classList.remove('loading');
+    area.innerHTML = `<div class="empty-hint" style="color:var(--bad)">出错：${err.message}</div>`;
+  }
+}
+
+function fmt(n,d=4){return n==null?'—':Number(n).toFixed(d)}
+function riskPill(risk){
+  const m={'低风险':'good','中风险':'warn','高风险':'bad','未知风险':'info','已过期':'bad'};
+  return `<span class="pill ${m[risk]||'info'}">${risk}</span>`;
+}
+
+function renderResults(data){
+  const area = document.getElementById('resultArea');
+  area.classList.remove('loading');
+  const rs = data.results;
+  if(!rs.length){area.innerHTML='<div class="empty-hint">无有效结果</div>';return}
+  document.getElementById('resultCount').textContent = `共 ${rs.length} 件商品`;
+
+  let html = `<table><thead><tr>
+    <th>排名</th><th class="name">商品</th><th>实付</th><th>克重</th>
+    <th>克单价</th><th>口味系数</th><th>临期风险</th><th>调整后克单价</th><th>推荐</th>
+  </tr></thead><tbody>`;
+  rs.forEach((r,i)=>{
+    const rc = i===0?'r1':i===1?'r2':i===2?'r3':'';
+    html += `<tr>
+      <td><span class="rank ${rc}">${i+1}</span></td>
+      <td class="name"><b>${r.name}</b>${r.flavor_name?'<br><span style="color:var(--text-dim);font-size:11px">'+r.flavor_name+'</span>':''}</td>
+      <td>¥${fmt(r.total_price,2)}</td>
+      <td>${fmt(r.total_weight_g,0)}g</td>
+      <td>${fmt(r.price_per_g,4)}</td>
+      <td>${fmt(r.flavor_factor,2)}</td>
+      <td>${riskPill(r.risk_level)}</td>
+      <td><b>${fmt(r.adjusted_price_per_g,4)}</b></td>
+      <td>${r.recommendation_label}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+
+  const best = rs[0];
+  const days = best.estimated_days_to_finish!=null?Math.ceil(best.estimated_days_to_finish):null;
+  const left = best.days_until_expiry!=null?best.days_until_expiry:null;
+  html += `<div class="rec-card">
+    <div class="title">${best.recommendation_label}：${best.name}</div>
+    <div class="reason">${best.reason}</div>
+    <ul>
+      <li>原始克单价 <b>${fmt(best.price_per_g,4)}</b> 元/g，调整后克单价 <b>${fmt(best.adjusted_price_per_g,4)}</b> 元/g</li>
+      <li>口味系数 ${fmt(best.flavor_factor,2)}（${best.flavor_type}）｜临期风险系数 ${fmt(best.expiry_factor,2)}</li>
+      ${days!=null?`<li>按日均消耗预计 <b>${days} 天</b>吃完${left!=null?`，距到期还有 <b>${left} 天</b>`:''}`:''}
+      ${best.baseline_updated?'<li style="color:var(--good)">🔥 已刷新历史最低克单价</li>':''}
+    </ul>
+  </div>`;
+  area.innerHTML = html;
+}
+
+// ============================================================ //
+// 基线 & 偏好
+// ============================================================ //
+async function loadBaseline(){
+  try{
+    const res = await fetch('/api/baseline');
+    const d = await res.json();
+    document.getElementById('baselineVal').textContent = d.baseline_price_per_g!=null ? fmt(d.baseline_price_per_g,4)+' 元/g' : '— 暂无';
+    document.getElementById('baselineSrc').textContent = d.baseline_source ? '（来源：'+d.baseline_source+'）' : '';
+  }catch{}
+}
+
+function openPref(){
+  fetch('/api/preference').then(r=>r.json()).then(p=>{
+    document.getElementById('prefLiked').value = (p.preferred_flavors||[]).join(',');
+    document.getElementById('prefDisliked').value = (p.disliked_flavors||[]).join(',');
+    document.getElementById('prefIntake').value = p.daily_intake_g ?? 20;
+    document.getElementById('prefModal').style.display = 'block';
+  });
+}
+function closePref(){document.getElementById('prefModal').style.display='none'}
+
+async function savePref(){
+  const liked = document.getElementById('prefLiked').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const disliked = document.getElementById('prefDisliked').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const intake = parseFloat(document.getElementById('prefIntake').value) || 20;
+  await fetch('/api/preference',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({preferred_flavors:liked,disliked_flavors:disliked,daily_intake_g:intake})});
+  closePref(); toast('偏好已保存');
+}
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._tm); t._tm = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+// 初始化
+addItem({name:'奥利奥薄脆',total_price:19.9,total_weight_g:500,flavor_type:'random',expiry_date:'2026-09-01'});
+loadBaseline();
+</script>
+</body>
+</html>

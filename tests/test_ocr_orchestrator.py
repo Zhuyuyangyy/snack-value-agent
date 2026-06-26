@@ -79,6 +79,42 @@ async def test_local_rapid_ocr_decodes_and_calls_engine(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_local_rapid_ocr_handles_dataclass_output(monkeypatch):
+    """回归测试：rapidocr >=3.x 返回 RapidOCROutput dataclass（有 .txts 属性）。
+
+    旧版 API 返回 (result, elapse) tuple，新版是 dataclass。
+    LocalRapidOCR 必须兼容两种，否则真实环境下 503。
+    """
+    from backend.extractor import LocalRapidOCR
+
+    class FakeRapidOCROutput:
+        def __init__(self, txts):
+            self.txts = txts
+
+    def fake_engine_call(img):
+        return FakeRapidOCROutput(["到手价19.9", "净含量84g"])
+
+    class FakeRapid:
+        def __init__(self):
+            pass
+        def __call__(self, img):
+            return fake_engine_call(img)
+
+    fake_cv2 = MagicMock()
+    fake_cv2.imdecode.return_value = "fake_img_array"
+
+    monkeypatch.setitem(sys.modules, "rapidocr", MagicMock(RapidOCR=FakeRapid))
+    monkeypatch.setitem(sys.modules, "cv2", fake_cv2)
+
+    sem = asyncio.Semaphore(1)
+    backend = LocalRapidOCR(sem)
+    result = await backend.ocr(b"\x89PNG\r\n\x1a\n fake bytes")
+
+    assert result.raw_text == "到手价19.9\n净含量84g"
+    assert result.backend_used == "LocalRapidOCR"
+
+
+@pytest.mark.asyncio
 async def test_cloud_minimax_returns_empty_raises(monkeypatch):
     """CloudMinimaxOCR 返回空文本时抛 RuntimeError（触发回退）。"""
     from backend.extractor import CloudMinimaxOCR

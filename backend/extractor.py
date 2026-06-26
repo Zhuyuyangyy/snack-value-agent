@@ -126,10 +126,17 @@ class LocalRapidOCR:
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if img is None:
             raise RuntimeError("LocalRapidOCR: image decode failed (unsupported format?)")
-        result, _elapse = self._engine(img)
-        if not result:
+        output = self._engine(img)
+        # rapidocr >=3.x 返回 RapidOCROutput dataclass（img/boxes/txts/scores/...）
+        # 旧版返回 (result, elapse) tuple，需要同时兼容两种 API
+        if hasattr(output, "txts"):
+            txts = output.txts or []
+        else:
+            result = output[0] if output else []
+            txts = [line[1] for line in result] if result else []
+        if not txts:
             return ""
-        return "\n".join(str(line[1]) for line in result)
+        return "\n".join(str(t) for t in txts)
 
 
 # ---------------------------------------------------------------------- #

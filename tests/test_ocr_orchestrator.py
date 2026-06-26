@@ -2,11 +2,13 @@
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from backend.extractor import OCRResult  # noqa: E402
 
 
 def test_ocr_result_dataclass():
@@ -106,3 +108,117 @@ async def test_cloud_minimax_success(monkeypatch):
     assert result.raw_text == "到手价19.9\n净含量84g"
     assert result.backend_used == "CloudMinimaxOCR"
     assert result.elapsed_ms >= 0
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_no_cloud_uses_local(monkeypatch):
+    """无云端配置时直接走本地。"""
+    from backend.extractor import OCROrchestrator
+
+    monkeypatch.setattr("backend.extractor.MINIMAX_API_KEY", "")
+    monkeypatch.setattr("backend.extractor.MINIMAX_GROUP_ID", "")
+
+    fake_local = AsyncMock()
+    fake_local.name = "LocalRapidOCR"
+    fake_local.ocr.return_value = OCRResult(
+        raw_text="ok", backend_used="LocalRapidOCR", elapsed_ms=10
+    )
+
+    monkeypatch.setattr("backend.extractor.LocalRapidOCR", lambda sem: fake_local)
+
+    orch = OCROrchestrator()
+    result = await orch.run(b"fake")
+    assert result.backend_used == "LocalRapidOCR"
+    assert fake_local.ocr.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_fallback_on_cloud_failure(monkeypatch):
+    """云端失败时回退到本地。"""
+    from backend.extractor import OCROrchestrator
+
+    monkeypatch.setattr("backend.extractor.MINIMAX_API_KEY", "k")
+    monkeypatch.setattr("backend.extractor.MINIMAX_GROUP_ID", "g")
+
+    fake_cloud = AsyncMock()
+    fake_cloud.name = "CloudMinimaxOCR"
+    fake_cloud.ocr.side_effect = RuntimeError("timeout")
+
+    fake_local = AsyncMock()
+    fake_local.name = "LocalRapidOCR"
+    fake_local.ocr.return_value = OCRResult(
+        raw_text="local_ok", backend_used="LocalRapidOCR", elapsed_ms=10
+    )
+
+    monkeypatch.setattr("backend.extractor.CloudMinimaxOCR", lambda: fake_cloud)
+    monkeypatch.setattr("backend.extractor.LocalRapidOCR", lambda sem: fake_local)
+
+    orch = OCROrchestrator()
+    result = await orch.run(b"fake")
+    assert result.backend_used == "LocalRapidOCR"
+    assert result.raw_text == "local_ok"
+    assert any("CloudMinimaxOCR" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_fallback_on_empty_text(monkeypatch):
+    """云端返回空文本时回退本地。"""
+    from backend.extractor import OCROrchestrator
+
+    monkeypatch.setattr("backend.extractor.MINIMAX_API_KEY", "k")
+    monkeypatch.setattr("backend.extractor.MINIMAX_GROUP_ID", "g")
+
+    fake_cloud = AsyncMock()
+    fake_cloud.name = "CloudMinimaxOCR"
+    fake_cloud.ocr.side_effect = RuntimeError("empty text")
+
+    fake_local = AsyncMock()
+    fake_local.name = "LocalRapidOCR"
+    fake_local.ocr.return_value = OCRResult(
+        raw_text="local", backend_used="LocalRapidOCR", elapsed_ms=10
+    )
+
+    monkeypatch.setattr("backend.extractor.CloudMinimaxOCR", lambda: fake_cloud)
+    monkeypatch.setattr("backend.extractor.LocalRapidOCR", lambda sem: fake_local)
+
+    orch = OCROrchestrator()
+    result = await orch.run(b"fake")
+    assert result.backend_used == "LocalRapidOCR"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_all_fail_raises(monkeypatch):
+    """云端和本地都失败时抛 RuntimeError。"""
+    from backend.extractor import OCROrchestrator
+
+    monkeypatch.setattr("backend.extractor.MINIMAX_API_KEY", "")
+    monkeypatch.setattr("backend.extractor.MINIMAX_GROUP_ID", "")
+
+    fake_local = AsyncMock()
+    fake_local.name = "LocalRapidOCR"
+    fake_local.ocr.side_effect = RuntimeError("decode failed")
+
+    monkeypatch.setattr("backend.extractor.LocalRapidOCR", lambda sem: fake_local)
+
+    orch = OCROrchestrator()
+    with pytest.raises(RuntimeError, match="所有 OCR 后端失败"):
+        await orch.run(b"fake")
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_rejects_oversized(monkeypatch):
+    """超过 MAX_IMAGE_SIZE_BYTES 时直接抛 ValueError。"""
+    from backend.extractor import OCROrchestrator
+
+    monkeypatch.setattr("backend.extractor.MINIMAX_API_KEY", "")
+    monkeypatch.setattr("backend.extractor.MINIMAX_GROUP_ID", "")
+
+    fake_local = AsyncMock()
+    monkeypatch.setattr("backend.extractor.LocalRapidOCR", lambda sem: fake_local)
+
+    monkeypatch.setattr("backend.extractor.MAX_IMAGE_SIZE_BYTES", 100)
+
+    orch = OCROrchestrator()
+    with pytest.raises(ValueError, match="image too large"):
+        await orch.run(b"x" * 200)
+    assert fake_local.ocr.await_count == 0

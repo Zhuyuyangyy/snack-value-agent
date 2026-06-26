@@ -17,7 +17,7 @@ from typing import Optional, Literal, Protocol
 
 import httpx
 
-from .config import MINIMAX_API_KEY, MINIMAX_GROUP_ID
+from .config import MINIMAX_API_KEY, MINIMAX_GROUP_ID, MAX_IMAGE_SIZE_BYTES, LOCAL_OCR_MAX_CONCURRENCY
 
 # ---------------------------------------------------------------------- #
 # 数据结构
@@ -166,6 +166,56 @@ class CloudMinimaxOCR:
             backend_used=self.name,
             elapsed_ms=(time.monotonic() - start) * 1000,
         )
+
+
+# ---------------------------------------------------------------------- #
+# V0.2.1 OCR 调度器（云端优先 + 本地兜底）
+# ---------------------------------------------------------------------- #
+class OCROrchestrator:
+    """OCR 后端调度器：按顺序尝试，失败回退。
+
+    优先级：
+        1. CloudMinimaxOCR（仅当 MINIMAX_API_KEY 和 MINIMAX_GROUP_ID 都配置）
+        2. LocalRapidOCR（兜底，无 key 或云端失败时启用）
+
+    本地 OCR 受 semaphore 限制并发。
+    """
+    def __init__(self):
+        import asyncio
+
+        self._local_sem = asyncio.Semaphore(LOCAL_OCR_MAX_CONCURRENCY)
+        self.backends: list = []
+        if MINIMAX_API_KEY and MINIMAX_GROUP_ID:
+            self.backends.append(CloudMinimaxOCR())
+        # 本地总是兜底（无 key 或云端失败时启用）
+        try:
+            self.backends.append(LocalRapidOCR(self._local_sem))
+        except RuntimeError:
+            if not self.backends:
+                raise
+
+    async def run(self, image_bytes: bytes) -> OCRResult:
+        if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
+            raise ValueError(
+                f"image too large: {len(image_bytes)} > {MAX_IMAGE_SIZE_BYTES}"
+            )
+
+        warnings: list[str] = []
+        last_err: Exception | None = None
+
+        for backend in self.backends:
+            try:
+                result = await backend.ocr(image_bytes)
+                result.warnings = warnings + result.warnings
+                return result
+            except Exception as e:
+                msg = f"{backend.name} failed: {e}"
+                warnings.append(msg)
+                last_err = e
+
+        raise RuntimeError(
+            f"所有 OCR 后端失败: {' | '.join(warnings)}"
+        ) from last_err
 
 
 # ---------------------------------------------------------------------- #

@@ -13,7 +13,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Optional, Literal
+from typing import Optional, Literal, Protocol
 
 import httpx
 
@@ -44,6 +44,34 @@ class ExtractedFields:
     quantity: FieldCandidate = field(default_factory=FieldCandidate)
     package_type: FieldCandidate = field(default_factory=FieldCandidate)
     raw_text: str = ""
+
+
+# ---------------------------------------------------------------------- #
+# V0.2.1 OCR 抽象层（Protocol + Result）
+# ---------------------------------------------------------------------- #
+@dataclass
+class OCRResult:
+    """单个 OCR 后端的识别结果。
+
+    Attributes:
+        raw_text: OCR 识别出的纯文本（多行用 \\n 分隔）
+        backend_used: 后端类名，如 "LocalRapidOCR" / "CloudMinimaxOCR"
+        elapsed_ms: 本后端实际耗时（毫秒）
+        warnings: 此前尝试过的后端失败信息（由 orchestrator 合并填充）
+    """
+    raw_text: str
+    backend_used: str
+    elapsed_ms: float
+    warnings: list[str] = field(default_factory=list)
+
+
+class OCRBackend(Protocol):
+    """OCR 后端协议。"""
+    name: str
+
+    async def ocr(self, image_bytes: bytes) -> OCRResult:
+        """异步识别图片，返回 OCRResult。失败时抛 Exception。"""
+        ...
 
 
 # ---------------------------------------------------------------------- #

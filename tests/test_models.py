@@ -114,3 +114,36 @@ def test_optional_fields_optional():
 def test_name_cannot_be_empty():
     with pytest.raises(ValidationError):
         SnackItem(name="   ", final_price=10, total_weight_g=100)
+
+
+def test_backfill_total_price():
+    """向后兼容：仅传 total_price 时，自动同步给 final_price。"""
+    item = SnackItem(name="X", total_price=10, total_weight_g=100)
+    assert item.final_price == 10
+    assert item.total_price == 10
+
+
+def test_backfill_total_price_prefers_explicit_final_price():
+    """final_price 显式传值时优先使用，不被 total_price 覆盖。"""
+    item = SnackItem(name="X", final_price=20, total_price=10, total_weight_g=100)
+    assert item.final_price == 20
+    assert item.total_price == 10
+
+
+def test_field_confidences_must_be_in_range():
+    """field_confidences 值必须在 [0, 1]。"""
+    with pytest.raises(ValidationError):
+        SnackItem(name="X", final_price=10, total_weight_g=100,
+                  field_confidences={"price": 1.5})
+
+
+def test_field_confidences_valid():
+    """合法 field_confidences 接受。"""
+    item = SnackItem(name="X", final_price=10, total_weight_g=100,
+                    field_confidences={"price": 0.95, "weight": 0.8})
+    assert item.field_confidences["price"] == 0.95
+
+
+def test_field_confidences_none_allowed():
+    item = SnackItem(name="X", final_price=10, total_weight_g=100)
+    assert item.field_confidences is None

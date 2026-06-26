@@ -6,7 +6,7 @@ V0.3：SnackItem 扩展到 24 字段，新增 4 类 flavor_type（fixed/random/m
 from __future__ import annotations
 
 from datetime import date
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -30,8 +30,8 @@ class SnackItem(BaseModel):
     name: str
     # 价格（P0）
     final_price: Optional[float] = Field(default=None, gt=0, description="到手价")
-    total_price: Optional[float] = Field(None, gt=0, description="标价（deprecated，兼容老请求）")
-    listed_price: Optional[float] = Field(None, gt=0, description="标价（页面价）")
+    total_price: Optional[float] = Field(default=None, gt=0, description="标价（deprecated，兼容老请求）")
+    listed_price: Optional[float] = Field(default=None, gt=0, description="标价（页面价）")
     coupon_amount: Optional[float] = Field(0, ge=0, description="优惠券")
     discount_amount: Optional[float] = Field(0, ge=0, description="满减")
     shipping_fee: Optional[float] = Field(0, ge=0, description="运费")
@@ -55,7 +55,21 @@ class SnackItem(BaseModel):
     source_text: Optional[str] = None
     source_url: Optional[str] = None
     # V0.3 OCR 可信度（可选字典）
-    field_confidences: Optional[dict] = None
+    field_confidences: Optional[Dict[str, float]] = None
+
+    @field_validator("field_confidences")
+    @classmethod
+    def validate_confidences(cls, v):
+        if v is None:
+            return v
+        for key, val in v.items():
+            if not isinstance(key, str):
+                raise ValueError(f"field_confidences keys must be str, got {type(key).__name__}")
+            if not isinstance(val, (int, float)):
+                raise ValueError(f"field_confidences[{key}] must be numeric, got {type(val).__name__}")
+            if not (0.0 <= val <= 1.0):
+                raise ValueError(f"field_confidences[{key}]={val} out of range [0.0, 1.0]")
+        return v
 
     @field_validator("name")
     @classmethod
@@ -84,7 +98,7 @@ class SnackItem(BaseModel):
     @model_validator(mode="after")
     def final_price_required(self) -> "SnackItem":
         if self.final_price is None:
-            raise ValueError("final_price 或 total_price 至少需要一个且 > 0")
+            raise ValueError("final_price 或 total_price 至少需要一个，且必须 > 0")
         return self
 
 

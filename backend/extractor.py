@@ -75,6 +75,64 @@ class OCRBackend(Protocol):
 
 
 # ---------------------------------------------------------------------- #
+# V0.2.1 本地 RapidOCR 后端
+# ---------------------------------------------------------------------- #
+class LocalRapidOCR:
+    """本地 RapidOCR 后端。
+
+    首次实例化时延迟导入 rapidocr，避免无依赖时影响其他模块。
+    使用 cv2 解码图片避免 Pillow 依赖，CPU 密集工作通过 asyncio.to_thread 调度。
+    """
+    name = "LocalRapidOCR"
+
+    def __init__(self, semaphore: "asyncio.Semaphore"):
+        try:
+            from rapidocr import RapidOCR
+        except ImportError as e:
+            raise RuntimeError(
+                "rapidocr 未安装，请运行: pip install 'rapidocr>=3.9.0' onnxruntime opencv-python-headless"
+            ) from e
+        self._engine = RapidOCR()
+        self._sem = semaphore
+
+    async def ocr(self, image_bytes: bytes) -> OCRResult:
+        import asyncio
+        import time
+
+        from .config import OCR_TIMEOUT_SECONDS
+
+        async with self._sem:
+            start = time.monotonic()
+            try:
+                text = await asyncio.wait_for(
+                    asyncio.to_thread(self._sync_ocr, image_bytes),
+                    timeout=OCR_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"LocalRapidOCR timeout after {OCR_TIMEOUT_SECONDS}s"
+                )
+        return OCRResult(
+            raw_text=text,
+            backend_used=self.name,
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+    def _sync_ocr(self, image_bytes: bytes) -> str:
+        import cv2
+        import numpy as np
+
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise RuntimeError("LocalRapidOCR: image decode failed (unsupported format?)")
+        result, _elapse = self._engine(img)
+        if not result:
+            return ""
+        return "\n".join(str(line[1]) for line in result)
+
+
+# ---------------------------------------------------------------------- #
 # 正则提取：价格、重量、数量、日期
 # ---------------------------------------------------------------------- #
 # 价格：匹配 "¥19.9" "19.9元" "到手价19.9" "券后价19.9" 等

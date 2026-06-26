@@ -49,3 +49,23 @@ def test_env_override(monkeypatch):
     from backend.config import OCR_TIMEOUT_SECONDS, MAX_IMAGE_SIZE_BYTES
     assert OCR_TIMEOUT_SECONDS == 5.0
     assert MAX_IMAGE_SIZE_BYTES == 2097152
+
+
+def test_cloud_timeout_default(monkeypatch):
+    """CLOUD_OCR_TIMEOUT_SECONDS 默认 30.0。"""
+    monkeypatch.delenv("CLOUD_OCR_TIMEOUT_SECONDS", raising=False)
+    if "backend.config" in sys.modules:
+        del sys.modules["backend.config"]
+    from backend.config import CLOUD_OCR_TIMEOUT_SECONDS
+    assert CLOUD_OCR_TIMEOUT_SECONDS == 30.0
+
+
+def test_minimax_override(monkeypatch):
+    """MINIMAX_API_KEY 和 MINIMAX_GROUP_ID 支持环境变量覆盖。"""
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key-123")
+    monkeypatch.setenv("MINIMAX_GROUP_ID", "test-group-456")
+    if "backend.config" in sys.modules:
+        del sys.modules["backend.config"]
+    from backend.config import MINIMAX_API_KEY, MINIMAX_GROUP_ID
+    assert MINIMAX_API_KEY == "test-key-123"
+    assert MINIMAX_GROUP_ID == "test-group-456"

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from .comparator import SnackComparator
 from .models import SnackItem, UserPreference
-from .extractor import extract_fields_from_text, extract_from_image, extracted_to_dict
+from .extractor import extract_fields_from_text, extracted_to_dict
 from .config import MAX_IMAGE_SIZE_BYTES
 from . import database as db
 
@@ -18,6 +18,20 @@ from . import database as db
 app = FastAPI(title="SnackValue Agent", version="0.2.0")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+
+
+# ---------------------------------------------------------------------- #
+# OCR Orchestrator 单例（懒加载，避免每次请求都重建后端列表 / ONNX 推理引擎）
+# ---------------------------------------------------------------------- #
+_orchestrator_singleton = None
+
+
+def _get_orchestrator():
+    global _orchestrator_singleton
+    if _orchestrator_singleton is None:
+        from .extractor import OCROrchestrator
+        _orchestrator_singleton = OCROrchestrator()
+    return _orchestrator_singleton
 
 
 # ---------------------------------------------------------------------- #
@@ -199,8 +213,6 @@ async def extract_from_screenshot(file: UploadFile = File(...)):
     if not image_bytes:
         raise HTTPException(status_code=422, detail="上传文件为空")
 
-    from .extractor import OCROrchestrator
-
     if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
         raise HTTPException(
             status_code=413,
@@ -208,8 +220,7 @@ async def extract_from_screenshot(file: UploadFile = File(...)):
         )
 
     try:
-        orchestrator = OCROrchestrator()
-        ocr_result = await orchestrator.run(image_bytes)
+        ocr_result = await _get_orchestrator().run(image_bytes)
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
     except RuntimeError as e:

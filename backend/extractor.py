@@ -17,6 +17,8 @@ from typing import Optional, Literal
 
 import httpx
 
+from .config import MINIMAX_API_KEY, MINIMAX_GROUP_ID
+
 # ---------------------------------------------------------------------- #
 # 数据结构
 # ---------------------------------------------------------------------- #
@@ -210,8 +212,6 @@ def extract_fields_from_text(text: str) -> ExtractedFields:
 # ---------------------------------------------------------------------- #
 # MiniMax Vision OCR 后端
 # ---------------------------------------------------------------------- #
-MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
-MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "")
 MINIMAX_BASE_URL = "https://api.minimax.chat/v1"
 
 

@@ -8,6 +8,8 @@
 
 **Tech Stack:** 原生 HTML5 + CSS3 + Vanilla JS（无框架），Playwright Python 绑定做视觉回归测试。
 
+**⚠️ SUPERSEDED:** This plan has been merged into the V0.3 real-value-decision plan. See [V0.3 Plan](./2026-06-26-v03-real-value-decision.md) (to be created).
+
 **Spec:** [docs/superpowers/specs/2026-06-26-ui-redesign-design.md](../specs/2026-06-26-ui-redesign-design.md)
 
 ---

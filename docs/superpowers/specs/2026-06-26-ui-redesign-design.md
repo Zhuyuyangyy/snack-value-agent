@@ -1,7 +1,8 @@
 # SnackValue Agent — UI Redesign Design v1.0
 
 - **Date**: 2026-06-26
-- **Status**: Approved
+- **Status**: SUPERSEDED by 2026-06-26-v03-real-value-decision-design.md (2026-06-26)
+- **Superseded by**: [V0.3 Real-Value Decision Engine Design](./2026-06-26-v03-real-value-decision-design.md)
 - **Phase**: V0.3 Phase 1 (UI 重做)
 - **Spec**: 本文档
 - **Reference roadmap**: 用户 V0.3 路线图 Phase 1

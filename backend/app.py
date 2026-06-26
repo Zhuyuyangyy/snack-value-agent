@@ -6,7 +6,7 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .comparator import SnackComparator
 from .models import SnackItem, UserPreference
@@ -39,6 +39,9 @@ def _get_orchestrator():
 # ---------------------------------------------------------------------- #
 class SnackItemIn(BaseModel):
     """比价请求中的商品项（V0.3 扩展 24 字段）。"""
+    # Pydantic v2: 允许 JSON 缺省字段（不报 missing）
+    model_config = ConfigDict(extra="ignore")
+
     name: str
     # 价格（P0 + legacy 兼容）
     final_price: Optional[float] = None
@@ -66,6 +69,18 @@ class SnackItemIn(BaseModel):
     # 元数据
     source_text: Optional[str] = None
     source_url: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _allow_missing_optionals(cls, data):
+        """Pydantic v2 兼容：客户端可能不发任何价格字段（OCR 失败场景）。
+
+        实际 final_price 校验在 _to_snack_item() 中进行。
+        """
+        if isinstance(data, dict):
+            # 不做任何事，仅作为 hook 阻止 strict missing
+            pass
+        return data
 
     @field_validator("flavor_type")
     @classmethod

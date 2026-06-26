@@ -59,6 +59,42 @@ def init_db(db_path: Path = DEFAULT_DB_PATH) -> None:
     )
     conn.commit()
     conn.close()
+    migrate_v023(db_path)
+
+
+def migrate_v023(db_path: Path = DEFAULT_DB_PATH) -> None:
+    """V0.2 → V0.3 schema 迁移：扩展字段（全部 nullable / 默认值）。
+
+    幂等：可重复执行不会出错（捕获 sqlite3.OperationalError 表示列已存在）。
+
+    新增列：
+    - 价格：listed_price, coupon_amount, discount_amount, shipping_fee
+    - 规格：single_weight_g
+    - 分类：channel, category, brand, after_opening_risk
+    - 临期：estimated_delivery_days
+    - 算法：flavor_uncertainty_penalty
+    """
+    new_columns = [
+        ("listed_price", "REAL"),
+        ("coupon_amount", "REAL DEFAULT 0"),
+        ("discount_amount", "REAL DEFAULT 0"),
+        ("shipping_fee", "REAL DEFAULT 0"),
+        ("single_weight_g", "REAL"),
+        ("channel", "TEXT DEFAULT 'unknown'"),
+        ("category", "TEXT DEFAULT 'unknown'"),
+        ("brand", "TEXT"),
+        ("after_opening_risk", "TEXT DEFAULT 'unknown'"),
+        ("estimated_delivery_days", "INTEGER DEFAULT 3"),
+        ("flavor_uncertainty_penalty", "REAL DEFAULT 0"),
+    ]
+    conn = _connect(db_path)
+    for col_name, col_def in new_columns:
+        try:
+            conn.execute(f"ALTER TABLE snack_history ADD COLUMN {col_name} {col_def}")
+        except sqlite3.OperationalError:
+            pass  # 列已存在
+    conn.commit()
+    conn.close()
 
 
 def save_evaluation(result: EvaluationResult, db_path: Path = DEFAULT_DB_PATH) -> int:

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from .comparator import SnackComparator
 from .models import SnackItem, UserPreference
 from .extractor import extract_fields_from_text, extract_from_image, extracted_to_dict
+from .config import MAX_IMAGE_SIZE_BYTES
 from . import database as db
 
 
@@ -183,23 +184,55 @@ def compare(req: CompareRequest):
 # ------------------------------------------------------------------ #
 @app.post("/api/extract")
 async def extract_from_screenshot(file: UploadFile = File(...)):
-    """上传商品截图 → OCR → 正则/规则提取 → 返回候选字段 + 置信度。
+    """上传商品截图 → OCR → 正则/规则提取 → 返回候选字段 + OCR 元信息。
 
-    需要 MINIMAX_API_KEY 和 MINIMAX_GROUP_ID 环境变量。
+    OCR 顺序：云端 MiniMax（如果有 key） → 本地 RapidOCR（兜底）。
+
+    Returns:
+        200: {ocr: {backend_used, elapsed_ms, warnings}, fields: {...}, raw_text: "..."}
+        413: 图片过大
+        422: 上传文件为空
+        503: 所有 OCR 后端不可用
+        500: 未预期异常
     """
     image_bytes = await file.read()
     if not image_bytes:
         raise HTTPException(status_code=422, detail="上传文件为空")
 
+    from .extractor import OCROrchestrator
+
+    if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"图片过大（{len(image_bytes)} > {MAX_IMAGE_SIZE_BYTES} 字节），请压缩后重试",
+        )
+
     try:
-        fields = await extract_from_image(image_bytes)
+        orchestrator = OCROrchestrator()
+        ocr_result = await orchestrator.run(image_bytes)
+    except ValueError as e:
+        raise HTTPException(status_code=413, detail=str(e))
     except RuntimeError as e:
-        # MiniMax 未配置时给出明确提示
-        raise HTTPException(status_code=503, detail=str(e))
+        # 所有 OCR 后端失败或无后端可用
+        detail = str(e)
+        if "无 OCR 后端" in detail or "rapidocr" in detail.lower():
+            detail = "OCR 暂不可用：请 `pip install 'rapidocr>=3.9.0' onnxruntime opencv-python-headless` 或配置 MINIMAX_API_KEY"
+        else:
+            detail = f"OCR 暂时不可用：{detail}。请稍后重试或手动粘贴文本。"
+        raise HTTPException(status_code=503, detail=detail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OCR 处理失败: {e}")
 
-    return extracted_to_dict(fields)
+    fields = extract_fields_from_text(ocr_result.raw_text)
+    return {
+        "ocr": {
+            "backend_used": ocr_result.backend_used,
+            "elapsed_ms": round(ocr_result.elapsed_ms, 1),
+            "warnings": ocr_result.warnings,
+        },
+        "fields": extracted_to_dict(fields),
+        "raw_text": ocr_result.raw_text,
+    }
 
 
 @app.post("/api/extract_text")

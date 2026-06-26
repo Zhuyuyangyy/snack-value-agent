@@ -10,3 +10,7 @@ node_modules/
 .worktrees/
 apkdump/
 *.apk
+docs/superpowers/ui-screenshots/
+.pytest_cache/
+playwright.requirements.txt
+

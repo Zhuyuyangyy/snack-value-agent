@@ -15,7 +15,7 @@ from .config import MAX_IMAGE_SIZE_BYTES
 from . import database as db
 
 
-app = FastAPI(title="SnackValue Agent", version="0.2.0")
+app = FastAPI(title="SnackValue Agent", version="0.3.0")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 

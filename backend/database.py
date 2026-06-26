@@ -25,7 +25,7 @@ def init_db(db_path: Path = DEFAULT_DB_PATH) -> None:
         CREATE TABLE IF NOT EXISTS snack_history (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             name          TEXT NOT NULL,
-            total_price   REAL NOT NULL,
+            total_price   REAL,  -- V0.3: nullable (use final_price when None)
             total_weight_g REAL NOT NULL,
             flavor_type   TEXT NOT NULL,
             flavor_name   TEXT,
@@ -73,7 +73,10 @@ def migrate_v023(db_path: Path = DEFAULT_DB_PATH) -> None:
     - 分类：channel, category, brand, after_opening_risk
     - 临期：estimated_delivery_days
     - 算法：flavor_uncertainty_penalty
+
+    V0.3.1 修正：移除 total_price 的 NOT NULL 约束（允许为 NULL，用 final_price 代替）。
     """
+    # Step 1: 添加新列
     new_columns = [
         ("listed_price", "REAL"),
         ("coupon_amount", "REAL DEFAULT 0"),
@@ -93,12 +96,69 @@ def migrate_v023(db_path: Path = DEFAULT_DB_PATH) -> None:
             conn.execute(f"ALTER TABLE snack_history ADD COLUMN {col_name} {col_def}")
         except sqlite3.OperationalError:
             pass  # 列已存在
+
+    # Step 2: 检查 total_price 是否 NOT NULL，如果是，重建表
+    cursor = conn.execute("PRAGMA table_info(snack_history)")
+    cols_info = list(cursor)
+    total_price_col = next((c for c in cols_info if c[1] == "total_price"), None)
+    needs_total_price_relax = total_price_col and total_price_col[3] == 1  # notnull=1
+
+    if needs_total_price_relax:
+        # SQLite 12-step: 重命名 → 创建新 → 复制 → 删除旧
+        conn.executescript("""
+            ALTER TABLE snack_history RENAME TO snack_history_old;
+
+            CREATE TABLE snack_history (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                name          TEXT NOT NULL,
+                total_price   REAL,
+                total_weight_g REAL NOT NULL,
+                flavor_type   TEXT NOT NULL,
+                flavor_name   TEXT,
+                expiry_date   TEXT,
+                package_type  TEXT DEFAULT 'unknown',
+                quantity      INTEGER,
+                source_text   TEXT,
+                price_per_g   REAL NOT NULL,
+                adjusted_price_per_g REAL NOT NULL,
+                value_score   REAL,
+                risk_level    TEXT,
+                recommendation_label TEXT,
+                reason        TEXT,
+                created_at    TEXT NOT NULL,
+                listed_price REAL,
+                coupon_amount REAL DEFAULT 0,
+                discount_amount REAL DEFAULT 0,
+                shipping_fee REAL DEFAULT 0,
+                single_weight_g REAL,
+                channel TEXT DEFAULT 'unknown',
+                category TEXT DEFAULT 'unknown',
+                brand TEXT,
+                after_opening_risk TEXT DEFAULT 'unknown',
+                estimated_delivery_days INTEGER DEFAULT 3,
+                flavor_uncertainty_penalty REAL DEFAULT 0
+            );
+
+            INSERT INTO snack_history
+            SELECT
+                id, name, total_price, total_weight_g, flavor_type, flavor_name,
+                expiry_date, package_type, quantity, source_text,
+                price_per_g, adjusted_price_per_g, value_score, risk_level,
+                recommendation_label, reason, created_at,
+                listed_price, coupon_amount, discount_amount, shipping_fee,
+                single_weight_g, channel, category, brand, after_opening_risk,
+                estimated_delivery_days, flavor_uncertainty_penalty
+            FROM snack_history_old;
+
+            DROP TABLE snack_history_old;
+        """)
+
     conn.commit()
     conn.close()
 
 
 def save_evaluation(result: EvaluationResult, db_path: Path = DEFAULT_DB_PATH) -> int:
-    """落库一条评估记录。"""
+    """落库一条评估记录。V0.3 兼容：total_price 允许为 None（用 final_price 代替）。"""
     conn = _connect(db_path)
     cur = conn.execute(
         """
@@ -111,7 +171,8 @@ def save_evaluation(result: EvaluationResult, db_path: Path = DEFAULT_DB_PATH) -
         """,
         (
             result.item.name,
-            result.item.total_price,
+            # V0.3: 优先使用 total_price，否则用 final_price
+            result.item.total_price if result.item.total_price is not None else result.item.final_price,
             result.item.total_weight_g,
             result.item.flavor_type,
             result.item.flavor_name,

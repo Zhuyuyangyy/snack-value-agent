@@ -174,6 +174,22 @@ def _result_to_dict(result) -> dict:
         "recommendation_label": result.recommendation_label,
         "reason": result.reason,
         "baseline_updated": result.baseline_updated,
+        # V0.3 多维度数据
+        "price_per_100g": round(result.price_per_100g, 6) if result.price_per_100g is not None else None,
+        "required_daily_intake_g": round(result.required_daily_intake_g, 1) if result.required_daily_intake_g is not None else None,
+        "usable_days_until_expiry": result.usable_days_until_expiry,
+        "finish_ratio": round(result.finish_ratio, 3) if result.finish_ratio is not None else None,
+        "logistics_factor": round(result.logistics_factor, 3) if result.logistics_factor is not None else None,
+        "trust_factor": round(result.trust_factor, 3) if result.trust_factor is not None else None,
+        "missing_info_factor": round(result.missing_info_factor, 3) if result.missing_info_factor is not None else None,
+        "real_value_price_per_g": round(result.real_value_price_per_g, 6) if result.real_value_price_per_g is not None and result.real_value_price_per_g != float("inf") else None,
+        "price_score": round(result.price_score, 3) if result.price_score is not None else None,
+        "expiry_score": round(result.expiry_score, 3) if result.expiry_score is not None else None,
+        "preference_score": round(result.preference_score, 3) if result.preference_score is not None else None,
+        "trust_score": round(result.trust_score, 3) if result.trust_score is not None else None,
+        "final_score": round(result.final_score, 3) if result.final_score is not None else None,
+        "missing_fields": result.missing_fields,
+        "field_confidences": result.field_confidences,
     }
 
 

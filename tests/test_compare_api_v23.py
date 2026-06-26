@@ -155,6 +155,81 @@ def test_compare_with_4score_fields_in_response(client: TestClient):
     })
     assert res.status_code == 200
     r = res.json()["results"][0]
-    # V0.3 字段存在（即使 T4 才填具体值，字段 key 必须存在）
-    # 注意：T3 阶段可能还是 None，TestClient 检查 key 是否存在
-    # 由于 T4 也会改 response, 这里只测 status，不严格测字段
+
+
+def test_compare_response_includes_v03_fields(client: TestClient):
+    """响应包含 V0.3 4 评分 + real_value 字段。"""
+    res = client.post("/api/compare", json={
+        "items": [{
+            "name": "X",
+            "final_price": 10,
+            "total_weight_g": 100,
+            "flavor_type": "fixed"
+        }],
+        "save": False
+    })
+    assert res.status_code == 200
+    r = res.json()["results"][0]
+    # V0.3 字段必须存在
+    for field in ["price_per_100g", "required_daily_intake_g",
+                  "real_value_price_per_g",
+                  "price_score", "expiry_score", "preference_score", "trust_score",
+                  "final_score", "missing_fields", "field_confidences"]:
+        assert field in r, f"响应缺少 V0.3 字段: {field}"
+
+
+def test_compare_response_includes_legacy_fields(client: TestClient):
+    """响应也保留 V0.2 旧字段（向后兼容）。"""
+    res = client.post("/api/compare", json={
+        "items": [{
+            "name": "X",
+            "final_price": 10,
+            "total_weight_g": 100,
+            "flavor_type": "fixed"
+        }],
+        "save": False
+    })
+    r = res.json()["results"][0]
+    for field in ["name", "total_price", "price_per_g", "value_score",
+                  "recommendation_label", "reason", "risk_level"]:
+        assert field in r, f"响应缺少 V0.2 字段: {field}"
+
+
+def test_compare_missing_fields_list_populated(client: TestClient):
+    """缺字段时 missing_fields 列表非空。"""
+    res = client.post("/api/compare", json={
+        "items": [{
+            "name": "X",
+            "final_price": 10,
+            "total_weight_g": 100
+        }],
+        "save": False
+    })
+    r = res.json()["results"][0]
+    assert "missing_fields" in r
+    assert isinstance(r["missing_fields"], list)
+    assert len(r["missing_fields"]) > 0  # 至少缺 expiry_date 等
+
+
+def test_compare_with_4score_response(client: TestClient):
+    """请求含 expiry 时，4 评分应计算（非 None）。"""
+    res = client.post("/api/compare", json={
+        "items": [{
+            "name": "X",
+            "final_price": 10,
+            "total_weight_g": 100,
+            "flavor_type": "fixed",
+            "expiry_date": "2026-09-01",
+            "estimated_delivery_days": 3
+        }],
+        "save": False
+    })
+    r = res.json()["results"][0]
+    # 评分应是 0-1 浮点数
+    assert isinstance(r["price_score"], (int, float))
+    assert 0 <= r["price_score"] <= 1
+    assert isinstance(r["expiry_score"], (int, float))
+    assert 0 <= r["expiry_score"] <= 1
+    assert isinstance(r["preference_score"], (int, float))
+    assert isinstance(r["trust_score"], (int, float))
+    assert isinstance(r["final_score"], (int, float))

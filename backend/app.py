@@ -6,7 +6,7 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .comparator import SnackComparator
 from .models import SnackItem, UserPreference
@@ -38,15 +38,42 @@ def _get_orchestrator():
 # 请求 / 响应模型
 # ---------------------------------------------------------------------- #
 class SnackItemIn(BaseModel):
+    """比价请求中的商品项（V0.3 扩展 24 字段）。"""
     name: str
-    total_price: float = Field(..., gt=0)
+    # 价格（P0 + legacy 兼容）
+    final_price: Optional[float] = None
+    total_price: Optional[float] = None  # legacy 兼容字段
+    listed_price: Optional[float] = None
+    coupon_amount: Optional[float] = 0
+    discount_amount: Optional[float] = 0
+    shipping_fee: Optional[float] = 0
+    # 规格
     total_weight_g: float = Field(..., gt=0)
-    flavor_type: str = "fixed"  # fixed | random | unknown
-    flavor_name: Optional[str] = None
-    expiry_date: Optional[str] = None  # YYYY-MM-DD
-    package_type: str = "unknown"
+    single_weight_g: Optional[float] = None
     quantity: Optional[int] = None
+    package_type: str = "unknown"
+    # 口味
+    flavor_type: str = "unknown"
+    flavor_name: Optional[str] = None
+    # 临期
+    expiry_date: Optional[str] = None  # YYYY-MM-DD
+    estimated_delivery_days: Optional[int] = 3
+    # 分类
+    channel: Optional[str] = "unknown"
+    category: Optional[str] = "unknown"
+    brand: Optional[str] = None
+    after_opening_risk: Optional[str] = "unknown"
+    # 元数据
     source_text: Optional[str] = None
+    source_url: Optional[str] = None
+
+    @field_validator("flavor_type")
+    @classmethod
+    def validate_flavor_type(cls, v: str) -> str:
+        allowed = {"fixed", "random", "mixed", "unknown"}
+        if v not in allowed:
+            raise ValueError(f"flavor_type 必须是 {allowed} 之一")
+        return v
 
 
 class CompareRequest(BaseModel):
@@ -79,23 +106,51 @@ def _startup() -> None:
 
 
 def _to_snack_item(item_in: SnackItemIn) -> SnackItem:
+    """把 SnackItemIn 转换为 SnackItem（兼容老 total_price）。"""
     expiry = None
     if item_in.expiry_date:
         try:
             expiry = date.fromisoformat(item_in.expiry_date)
         except ValueError:
             raise HTTPException(status_code=422, detail=f"expiry_date 格式错误: {item_in.expiry_date}")
-    return SnackItem(
+
+    # final_price 优先；老请求用 total_price fallback
+    final_price = item_in.final_price
+    if final_price is None:
+        if item_in.total_price is None:
+            raise HTTPException(
+                status_code=422,
+                detail="final_price 或 total_price 至少需要一个，且必须 > 0",
+            )
+        final_price = item_in.total_price
+
+    try:
+        return SnackItem(
         name=item_in.name,
+        final_price=final_price,
         total_price=item_in.total_price,
+        listed_price=item_in.listed_price,
+        coupon_amount=item_in.coupon_amount or 0,
+        discount_amount=item_in.discount_amount or 0,
+        shipping_fee=item_in.shipping_fee or 0,
         total_weight_g=item_in.total_weight_g,
+        single_weight_g=item_in.single_weight_g,
+        quantity=item_in.quantity,
+        package_type=item_in.package_type,
         flavor_type=item_in.flavor_type,
         flavor_name=item_in.flavor_name,
         expiry_date=expiry,
-        package_type=item_in.package_type,
-        quantity=item_in.quantity,
+        estimated_delivery_days=item_in.estimated_delivery_days or 3,
+        channel=item_in.channel or "unknown",
+        category=item_in.category or "unknown",
+        brand=item_in.brand,
+        after_opening_risk=item_in.after_opening_risk or "unknown",
         source_text=item_in.source_text,
-    )
+        source_url=item_in.source_url,
+        )
+    except Exception as e:
+        # 将 SnackItem 字段约束错误（如 final_price=0）转成 422 而非 500
+        raise HTTPException(status_code=422, detail=f"字段校验失败: {e}")
 
 
 def _result_to_dict(result) -> dict:

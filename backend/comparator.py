@@ -21,14 +21,22 @@ class SnackComparator:
     # ------------------------------------------------------------------ #
     # 基础计算
     # ------------------------------------------------------------------ #
+    def _resolve_price(self, item: SnackItem) -> float:
+        """V0.3：final_price 优先；老 total_price 兼容。"""
+        if item.final_price is not None:
+            return item.final_price
+        if item.total_price is not None:
+            return item.total_price
+        raise ValueError("final_price 或 total_price 至少需要一个")
+
     def calculate_price_per_g(self, item: SnackItem) -> float:
         if item.total_weight_g <= 0:
             raise ValueError("total_weight_g 必须大于 0")
-        return item.total_price / item.total_weight_g
+        return self._resolve_price(item) / item.total_weight_g
 
     def calculate_price_per_pack(self, item: SnackItem) -> Optional[float]:
         if item.quantity and item.quantity > 0:
-            return item.total_price / item.quantity
+            return self._resolve_price(item) / item.quantity
         return None
 
     # ------------------------------------------------------------------ #

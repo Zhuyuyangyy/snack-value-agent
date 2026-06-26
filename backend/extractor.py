@@ -13,9 +13,11 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Optional, Literal
+from typing import Optional, Literal, Protocol
 
 import httpx
+
+from .config import MINIMAX_API_KEY, MINIMAX_GROUP_ID, MAX_IMAGE_SIZE_BYTES, LOCAL_OCR_MAX_CONCURRENCY
 
 # ---------------------------------------------------------------------- #
 # 数据结构
@@ -42,6 +44,185 @@ class ExtractedFields:
     quantity: FieldCandidate = field(default_factory=FieldCandidate)
     package_type: FieldCandidate = field(default_factory=FieldCandidate)
     raw_text: str = ""
+
+
+# ---------------------------------------------------------------------- #
+# V0.2.1 OCR 抽象层（Protocol + Result）
+# ---------------------------------------------------------------------- #
+@dataclass
+class OCRResult:
+    """单个 OCR 后端的识别结果。
+
+    Attributes:
+        raw_text: OCR 识别出的纯文本（多行用 \\n 分隔）
+        backend_used: 后端类名，如 "LocalRapidOCR" / "CloudMinimaxOCR"
+        elapsed_ms: 本后端实际耗时（毫秒）
+        warnings: 此前尝试过的后端失败信息（由 orchestrator 合并填充）
+    """
+    raw_text: str
+    backend_used: str
+    elapsed_ms: float
+    warnings: list[str] = field(default_factory=list)
+
+
+class OCRBackend(Protocol):
+    """OCR 后端协议。"""
+    name: str
+
+    async def ocr(self, image_bytes: bytes) -> OCRResult:
+        """异步识别图片，返回 OCRResult。失败时抛 Exception。"""
+        ...
+
+
+# ---------------------------------------------------------------------- #
+# V0.2.1 本地 RapidOCR 后端
+# ---------------------------------------------------------------------- #
+class LocalRapidOCR:
+    """本地 RapidOCR 后端。
+
+    首次实例化时延迟导入 rapidocr，避免无依赖时影响其他模块。
+    使用 cv2 解码图片避免 Pillow 依赖，CPU 密集工作通过 asyncio.to_thread 调度。
+    """
+    name = "LocalRapidOCR"
+
+    def __init__(self, semaphore: "asyncio.Semaphore"):
+        try:
+            from rapidocr import RapidOCR
+        except ImportError as e:
+            raise RuntimeError(
+                "rapidocr 未安装，请运行: pip install 'rapidocr>=3.9.0' onnxruntime opencv-python-headless"
+            ) from e
+        self._engine = RapidOCR()
+        self._sem = semaphore
+
+    async def ocr(self, image_bytes: bytes) -> OCRResult:
+        import asyncio
+        import time
+
+        from .config import OCR_TIMEOUT_SECONDS
+
+        async with self._sem:
+            start = time.monotonic()
+            try:
+                text = await asyncio.wait_for(
+                    asyncio.to_thread(self._sync_ocr, image_bytes),
+                    timeout=OCR_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"LocalRapidOCR timeout after {OCR_TIMEOUT_SECONDS}s"
+                )
+        return OCRResult(
+            raw_text=text,
+            backend_used=self.name,
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+    def _sync_ocr(self, image_bytes: bytes) -> str:
+        import cv2
+        import numpy as np
+
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise RuntimeError("LocalRapidOCR: image decode failed (unsupported format?)")
+        output = self._engine(img)
+        # rapidocr >=3.x 返回 RapidOCROutput dataclass（img/boxes/txts/scores/...）
+        # 旧版返回 (result, elapse) tuple，需要同时兼容两种 API
+        if hasattr(output, "txts"):
+            txts = output.txts or []
+        else:
+            result = output[0] if output else []
+            txts = [line[1] for line in result] if result else []
+        if not txts:
+            return ""
+        return "\n".join(str(t) for t in txts)
+
+
+# ---------------------------------------------------------------------- #
+# V0.2.1 云端 MiniMax OCR 后端
+# ---------------------------------------------------------------------- #
+class CloudMinimaxOCR:
+    """云端 MiniMax Vision OCR 后端。
+
+    包装现有 `ocr_with_minimax` 函数以满足 OCRBackend 协议。
+    空文本、超时、未配置均视为失败抛 RuntimeError，由 orchestrator 触发回退。
+    """
+    name = "CloudMinimaxOCR"
+
+    async def ocr(self, image_bytes: bytes) -> OCRResult:
+        import asyncio
+        import time
+
+        from .config import CLOUD_OCR_TIMEOUT_SECONDS
+
+        start = time.monotonic()
+        try:
+            text = await asyncio.wait_for(
+                ocr_with_minimax(image_bytes),
+                timeout=CLOUD_OCR_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"CloudMinimaxOCR timeout after {CLOUD_OCR_TIMEOUT_SECONDS}s"
+            )
+        if not text or not text.strip():
+            raise RuntimeError("CloudMinimaxOCR returned empty text")
+        return OCRResult(
+            raw_text=text,
+            backend_used=self.name,
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+
+# ---------------------------------------------------------------------- #
+# V0.2.1 OCR 调度器（云端优先 + 本地兜底）
+# ---------------------------------------------------------------------- #
+class OCROrchestrator:
+    """OCR 后端调度器：按顺序尝试，失败回退。
+
+    优先级：
+        1. CloudMinimaxOCR（仅当 MINIMAX_API_KEY 和 MINIMAX_GROUP_ID 都配置）
+        2. LocalRapidOCR（兜底，无 key 或云端失败时启用）
+
+    本地 OCR 受 semaphore 限制并发。
+    """
+    def __init__(self):
+        import asyncio
+
+        self._local_sem = asyncio.Semaphore(LOCAL_OCR_MAX_CONCURRENCY)
+        self.backends: list = []
+        if MINIMAX_API_KEY and MINIMAX_GROUP_ID:
+            self.backends.append(CloudMinimaxOCR())
+        # 本地总是兜底（无 key 或云端失败时启用）
+        try:
+            self.backends.append(LocalRapidOCR(self._local_sem))
+        except RuntimeError:
+            if not self.backends:
+                raise
+
+    async def run(self, image_bytes: bytes) -> OCRResult:
+        if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
+            raise ValueError(
+                f"image too large: {len(image_bytes)} > {MAX_IMAGE_SIZE_BYTES}"
+            )
+
+        warnings: list[str] = []
+        last_err: Exception | None = None
+
+        for backend in self.backends:
+            try:
+                result = await backend.ocr(image_bytes)
+                result.warnings = warnings + result.warnings
+                return result
+            except Exception as e:
+                msg = f"{backend.name} failed: {e}"
+                warnings.append(msg)
+                last_err = e
+
+        raise RuntimeError(
+            f"所有 OCR 后端失败: {' | '.join(warnings)}"
+        ) from last_err
 
 
 # ---------------------------------------------------------------------- #
@@ -210,8 +391,6 @@ def extract_fields_from_text(text: str) -> ExtractedFields:
 # ---------------------------------------------------------------------- #
 # MiniMax Vision OCR 后端
 # ---------------------------------------------------------------------- #
-MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
-MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "")
 MINIMAX_BASE_URL = "https://api.minimax.chat/v1"
 
 

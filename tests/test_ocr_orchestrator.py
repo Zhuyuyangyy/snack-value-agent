@@ -258,3 +258,79 @@ async def test_orchestrator_rejects_oversized(monkeypatch):
     with pytest.raises(ValueError, match="image too large"):
         await orch.run(b"x" * 200)
     assert fake_local.ocr.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cloud_minimax_timeout_raises(monkeypatch):
+    """CloudMinimaxOCR 超时时抛 RuntimeError（触发回退）。"""
+    from backend.extractor import CloudMinimaxOCR
+
+    # 直接测试：替换 asyncio.wait_for 为抛超时版本（不 await coro）
+    async def fake_wait_for(coro, timeout):
+        coro.close()
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr("backend.extractor.ocr_with_minimax", AsyncMock())
+    # monkeypatch asyncio module global since the production code does
+    # `import asyncio` inside the method which resolves to the same module.
+    monkeypatch.setattr("asyncio.wait_for", fake_wait_for)
+
+    backend = CloudMinimaxOCR()
+    with pytest.raises(RuntimeError, match="timeout"):
+        await backend.ocr(b"fake")
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_serializes_local_ocr(monkeypatch):
+    """并发调用时，本地 OCR 通过 semaphore 串行执行。"""
+    from backend.extractor import OCRResult, OCROrchestrator
+
+    monkeypatch.setattr("backend.extractor.MINIMAX_API_KEY", "")
+    monkeypatch.setattr("backend.extractor.MINIMAX_GROUP_ID", "")
+
+    call_log = []
+    call_started = asyncio.Event()
+    call_can_finish = asyncio.Event()
+
+    class FakeLocal:
+        name = "LocalRapidOCR"
+
+        def __init__(self, sem):
+            # 必须接受并使用 semaphore 才能验证串行化
+            self._sem = sem
+
+        async def ocr(self, b):
+            async with self._sem:
+                call_log.append(("start", len(call_log)))
+                call_started.set()
+                await call_can_finish.wait()
+                call_log.append(("end", len(call_log)))
+                return OCRResult(
+                    raw_text="x", backend_used="LocalRapidOCR", elapsed_ms=10
+                )
+
+    monkeypatch.setattr("backend.extractor.LocalRapidOCR", FakeLocal)
+
+    orch = OCROrchestrator()
+
+    # 启动 3 个并发任务
+    task1 = asyncio.create_task(orch.run(b"a"))
+    task2 = asyncio.create_task(orch.run(b"b"))
+    task3 = asyncio.create_task(orch.run(b"c"))
+
+    # 等第一个开始
+    await call_started.wait()
+    # 给其他任务一点时间尝试进入（它们应该被 semaphore 阻塞）
+    await asyncio.sleep(0.05)
+
+    # 此时应该只有 1 个 start
+    starts = [c for c in call_log if c[0] == "start"]
+    assert len(starts) == 1, f"semaphore 应串行化，但发现 {len(starts)} 个并发 start"
+
+    # 释放第一个，让第二个进入
+    call_can_finish.set()
+    # 等所有任务完成
+    results = await asyncio.gather(task1, task2, task3)
+    assert all(r.backend_used == "LocalRapidOCR" for r in results)
+    # 最终应有 3 个 start 和 3 个 end
+    assert len(call_log) == 6

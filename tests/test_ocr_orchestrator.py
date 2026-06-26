@@ -74,3 +74,35 @@ async def test_local_rapid_ocr_decodes_and_calls_engine(monkeypatch):
     assert result.elapsed_ms >= 0
     assert fake_cv2.imdecode.called
     assert len(fake_engine_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_cloud_minimax_returns_empty_raises(monkeypatch):
+    """CloudMinimaxOCR 返回空文本时抛 RuntimeError（触发回退）。"""
+    from backend.extractor import CloudMinimaxOCR
+
+    async def fake_ocr(b):
+        return ""
+
+    monkeypatch.setattr("backend.extractor.ocr_with_minimax", fake_ocr)
+
+    backend = CloudMinimaxOCR()
+    with pytest.raises(RuntimeError, match="empty text"):
+        await backend.ocr(b"fake")
+
+
+@pytest.mark.asyncio
+async def test_cloud_minimax_success(monkeypatch):
+    """CloudMinimaxOCR 成功时返回 OCRResult。"""
+    from backend.extractor import CloudMinimaxOCR
+
+    async def fake_ocr(b):
+        return "到手价19.9\n净含量84g"
+
+    monkeypatch.setattr("backend.extractor.ocr_with_minimax", fake_ocr)
+
+    backend = CloudMinimaxOCR()
+    result = await backend.ocr(b"fake")
+    assert result.raw_text == "到手价19.9\n净含量84g"
+    assert result.backend_used == "CloudMinimaxOCR"
+    assert result.elapsed_ms >= 0

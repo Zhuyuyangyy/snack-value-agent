@@ -133,6 +133,42 @@ class LocalRapidOCR:
 
 
 # ---------------------------------------------------------------------- #
+# V0.2.1 云端 MiniMax OCR 后端
+# ---------------------------------------------------------------------- #
+class CloudMinimaxOCR:
+    """云端 MiniMax Vision OCR 后端。
+
+    包装现有 `ocr_with_minimax` 函数以满足 OCRBackend 协议。
+    空文本、超时、未配置均视为失败抛 RuntimeError，由 orchestrator 触发回退。
+    """
+    name = "CloudMinimaxOCR"
+
+    async def ocr(self, image_bytes: bytes) -> OCRResult:
+        import asyncio
+        import time
+
+        from .config import CLOUD_OCR_TIMEOUT_SECONDS
+
+        start = time.monotonic()
+        try:
+            text = await asyncio.wait_for(
+                ocr_with_minimax(image_bytes),
+                timeout=CLOUD_OCR_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"CloudMinimaxOCR timeout after {CLOUD_OCR_TIMEOUT_SECONDS}s"
+            )
+        if not text or not text.strip():
+            raise RuntimeError("CloudMinimaxOCR returned empty text")
+        return OCRResult(
+            raw_text=text,
+            backend_used=self.name,
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+
+# ---------------------------------------------------------------------- #
 # 正则提取：价格、重量、数量、日期
 # ---------------------------------------------------------------------- #
 # 价格：匹配 "¥19.9" "19.9元" "到手价19.9" "券后价19.9" 等

@@ -393,12 +393,21 @@ async function extractFromImage(file){
   fd.append('file', file);
   try{
     const res = await fetch('/api/extract',{method:'POST',body:fd});
-    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.detail||'识别失败')}
+    if(!res.ok){
+      const e = await res.json().catch(()=>({}));
+      const code = res.status;
+      let hint = '';
+      if(code === 503) hint = '<br><span style="font-size:12px">OCR 暂不可用，请尝试手动粘贴 OCR 文本</span>';
+      else if(code === 413) hint = '<br><span style="font-size:12px">图片过大，请压缩到 10MB 以下</span>';
+      else if(code === 422) hint = '<br><span style="font-size:12px">上传文件为空</span>';
+      throw new Error((e.detail || '识别失败') + hint);
+    }
     const data = await res.json();
-    extractedData = data;
-    renderConfirmCard(data);
+    // 新结构：{ocr: {...}, fields: {...}, raw_text: "..."}
+    extractedData = data.fields;
+    renderConfirmCard(data.fields, data.ocr, data.raw_text);
   }catch(err){
-    area.innerHTML = `<div class="empty-hint" style="color:var(--bad)">识别失败：${err.message}<br><span style="font-size:12px">可尝试粘贴 OCR 文本手动提取</span></div>`;
+    area.innerHTML = `<div class="empty-hint" style="color:var(--bad)">识别失败：${err.message}</div>`;
   }
 }
 
@@ -421,7 +430,8 @@ async function extractFromText(){
     if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.detail||'提取失败')}
     const data = await res.json();
     extractedData = data;
-    renderConfirmCard(data);
+    // /api/extract_text 返回旧结构（无 ocr 块）
+    renderConfirmCard(data, null, text);
   }catch(err){
     area.innerHTML = `<div class="empty-hint" style="color:var(--bad)">提取失败：${err.message}</div>`;
   }
@@ -443,10 +453,27 @@ function confBadge(c){
   return `<span class="conf-badge ${m[c]||'low'}">${t[c]||'❓ 需确认'}</span>`;
 }
 
-function renderConfirmCard(data){
+function renderConfirmCard(data, ocrMeta, rawText){
   const area = document.getElementById('confirmArea');
   area.style.display = 'block';
+
+  // OCR 元信息（仅图片识别时）
+  let ocrHeader = '';
+  if(ocrMeta){
+    let warnHtml = '';
+    if(ocrMeta.warnings && ocrMeta.warnings.length){
+      warnHtml = `<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠️ ${escHtml(ocrMeta.warnings.join('；'))}</div>`;
+    }
+    const backendLabel = ocrMeta.backend_used === 'LocalRapidOCR' ? '本地 OCR' : '云端 OCR';
+    const fallbackHint = ocrMeta.warnings && ocrMeta.warnings.length ? '（已自动回退）' : '';
+    ocrHeader = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;padding:6px 10px;background:rgba(0,0,0,.2);border-radius:6px">识别来源：${backendLabel}${fallbackHint} · 耗时 ${Math.round(ocrMeta.elapsed_ms)}ms${warnHtml}</div>`;
+  }
+
+  // 原始文本：优先使用参数传入的（文本提取时为输入文本）
+  const displayRawText = rawText || (data.raw_text || '');
+
   let html = '<div class="confirm-card"><div class="title">📋 识别结果 — 请确认后加入比价</div>';
+  html += ocrHeader;
 
   // 商品名称（手动填）
   html += `<div class="field-row"><span class="flabel">商品名称</span><input id="cf-name" placeholder="如：奥利奥薄脆" /><span class="conf-badge low">手动</span></div>`;
@@ -468,8 +495,8 @@ function renderConfirmCard(data){
   }
 
   // 原始文本折叠
-  if(data.raw_text){
-    html += `<details style="margin-top:10px"><summary style="font-size:12px;color:var(--text-dim);cursor:pointer">查看 OCR 原始文本</summary><pre style="font-size:11px;color:var(--text-dim);white-space:pre-wrap;margin:6px 0 0;padding:8px;background:rgba(0,0,0,.2);border-radius:8px;max-height:120px;overflow:auto">${escHtml(data.raw_text)}</pre></details>`;
+  if(displayRawText){
+    html += `<details style="margin-top:10px"><summary style="font-size:12px;color:var(--text-dim);cursor:pointer">查看 OCR 原始文本</summary><pre style="font-size:11px;color:var(--text-dim);white-space:pre-wrap;margin:6px 0 0;padding:8px;background:rgba(0,0,0,.2);border-radius:8px;max-height:120px;overflow:auto">${escHtml(displayRawText)}</pre></details>`;
   }
 
   html += `<div class="confirm-actions">

@@ -14,3 +14,8 @@ docs/superpowers/ui-screenshots/
 .pytest_cache/
 playwright.requirements.txt
 
+# 截图回归集：保留 .txt 和 .json，排除真实截图大文件
+datasets/screenshots/*.jpg
+datasets/screenshots/*.png
+datasets/screenshots/*.jpeg
+

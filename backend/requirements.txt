@@ -6,3 +6,4 @@ python-multipart>=0.0.6
 rapidocr>=3.9.0
 onnxruntime>=1.18
 opencv-python-headless>=4.8
+pytest-asyncio>=0.23

@@ -1,0 +1,9 @@
+{
+  "total_price": 99.00,
+  "total_weight_g": 1000,
+  "flavor_type": "fixed",
+  "flavor_name": null,
+  "expiry_date": "2027-03-01",
+  "quantity": null,
+  "package_type": "box"
+}

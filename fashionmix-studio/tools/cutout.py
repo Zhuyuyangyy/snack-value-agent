@@ -39,6 +39,7 @@ def main() -> int:
     parser.add_argument("--input", required=True, help="Folder of source images")
     parser.add_argument("--output", required=True, help="Folder to write transparent PNGs")
     parser.add_argument("--prefix", default="item_", help="Output filename prefix")
+    parser.add_argument("--start", type=int, default=1, help="Starting index (useful for multi-category batches to avoid filename collisions)")
     args = parser.parse_args()
 
     in_dir = Path(args.input)
@@ -52,7 +53,7 @@ def main() -> int:
 
     print(f"Processing {len(sources)} images...")
     ok = 0
-    for i, src in enumerate(sources, start=1):
+    for i, src in enumerate(sources, start=args.start):
         dst = out_dir / f"{args.prefix}{i:03d}.png"
         if cutout_one(src, dst):
             print(f"  [{i:02d}/{len(sources)}] {src.name} -> {dst.name}")

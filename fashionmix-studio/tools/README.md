@@ -28,10 +28,22 @@ rembg 会自动下载 u2netp 模型到 `~/.u2net/`（约 170MB）。之后不再
 
 > ⚠️ products.json 里的 `image` 字段已经硬编码为 `assets/items/<id>.png`（如 `assets/items/skirt_001.png`），但 cutout.py 默认输出 `item_NNN.png` 格式。
 > 你需要**二选一**：
-> 1. 改 products.json 的 `image` 字段为 `assets/items/item_NNN.png`
-> 2. 或者让 cutout.py 按 ID 命名（见 `cutout.py --prefix` 选项）
 >
-> 建议：保持当前架构。让 cutout.py 输出 `item_NNN.png`，然后 products.json 用映射表
-> `id -> item_NNN.png` 关联。最简单做法是：把 30 个商品按你截屏里看到的顺序放进 raw_images/，
-> 截屏里的"第一件"=item_001.png，"第二件"=item_002.png，以此类推。
-> 然后把 products.json 的 `image` 字段批量改为 `assets/items/item_NNN.png`（用 Task 2 里的脚手架脚本做）。
+> **方案 A（推荐）：一次跑完，重命名 products.json**
+> 1. 把 30 张原图按任意顺序放进 `raw_images/`
+> 2. 跑：`python tools/cutout.py --input ./raw_images --output ./frontend/assets/items`
+> 3. 生成 `item_001.png` ~ `item_030.png`
+> 4. 重命名 `frontend/assets/items/item_001.png` → `skirt_001.png`、`item_002.png` → `skirt_002.png`... 等等，按你想要的映射
+> 5. 或更简单：把 products.json 的所有 `image` 字段从 `assets/items/<id>.png` 改为 `assets/items/item_NNN.png`（按 inventory 顺序）
+>
+> **方案 B：按类别分批跑**
+> 1. 把 6 张裙子图放 `raw_images/skirts/`、6 张上衣图放 `raw_images/tops/`...
+> 2. 每批用不同 `--prefix`：
+>    ```bash
+>    python tools/cutout.py --input raw_images/skirts --output frontend/assets/items --prefix skirt_ --start 1
+>    python tools/cutout.py --input raw_images/tops   --output frontend/assets/items --prefix top_   --start 1
+>    # ... 其他 4 类同理
+>    ```
+> 3. **必须用 `--start 1` 防止后续批次覆盖之前的（每类都是从头编号）**
+>
+> 方案 A 更简单，方案 B 更贴合 products.json 的命名但要管 6 个文件夹。

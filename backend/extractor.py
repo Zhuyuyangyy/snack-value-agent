@@ -236,9 +236,11 @@ _PRICE_PATTERNS = [
 ]
 
 # 重量：匹配 "500g" "420克" "净含量420g" "84g×5袋" "84g*5" "5kg"
+# 注意：多规格 pattern (3 捕获组) 必须放在净含量 pattern 之前，
+# 否则 "净含量84g×5袋" 会被 "净含量84g" 先匹配并返回 84g。
 _WEIGHT_PATTERNS = [
+    re.compile(r'(\d+(?:\.\d+)?)\s*(g|克|kg|KG)\s*[×x\*]\s*(\d+)', re.I),  # 84g×5 → 总克重
     re.compile(r'净含量\s*[：:]?\s*(\d+(?:\.\d+)?)\s*(g|克|kg|KG|毫升|ml)', re.I),
-    re.compile(r'(\d+(?:\.\d+)?)\s*(g|克|kg|KG)\s*[×x\*]\s*(\d+)', re.I),  # 84g×5
     re.compile(r'(\d+(?:\.\d+)?)\s*(g|克|kg|KG|毫升|ml)', re.I),
 ]
 

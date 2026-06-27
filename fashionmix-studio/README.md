@@ -33,7 +33,7 @@ cd fashionmix-studio    # 注意：必须从项目根 serve，不要 -d frontend
 python -m http.server 8000
 ```
 
-打开 http://localhost:8000/frontend/index.html
+打开 **http://localhost:8000/** （根路径会自动跳转到 `frontend/index.html`）
 
 > ⚠️ **不要用** `python -m http.server 8000 -d frontend`——这会阻止 `data/products.json` 路径解析。
 

@@ -18,7 +18,7 @@ FRONTEND_PID=$!
 trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null" EXIT
 echo ""
 echo "==========================================="
-echo "Frontend: http://localhost:8000/frontend/index.html"
+echo "Frontend: http://localhost:8000/  (auto-redirects to /frontend/index.html)"
 echo "Backend:  http://localhost:8001"
 echo "==========================================="
 echo "Press Ctrl+C to stop"

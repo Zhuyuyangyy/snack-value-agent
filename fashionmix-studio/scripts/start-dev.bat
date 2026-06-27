@@ -7,7 +7,7 @@ start "FashionMix Frontend" cmd /k "cd .. && python -m http.server 8000"
 
 echo.
 echo ===========================================
-echo Frontend: http://localhost:8000/frontend/index.html
+echo Frontend: http://localhost:8000/  (auto-redirects to /frontend/index.html)
 echo Backend:  http://localhost:8001
 echo ===========================================
 echo Press any key to close launcher (servers keep running)

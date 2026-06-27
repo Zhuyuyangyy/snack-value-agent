@@ -80,7 +80,7 @@ def _validate(data: dict[str, Any]) -> None:
     for v in data["scores"].values():
         if not isinstance(v, (int, float)) or not (0 <= v <= 100):
             raise ValueError(f"score out of range: {v}")
-    if "suggestion" not in data or len(data["suggestion"]) > 80:
+    if "suggestion" not in data or len(data["suggestion"]) > 60:
         raise ValueError("suggestion missing or too long")
 
 

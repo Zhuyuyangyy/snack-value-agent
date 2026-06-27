@@ -3,7 +3,7 @@ __pycache__/
 *.pyo
 .env
 *.db
-data/
+/data/
 .venv/
 node_modules/
 .DS_Store

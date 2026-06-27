@@ -7,7 +7,7 @@ import { StyleRadar } from './components/StyleRadar.js';
 import { ShareCard } from './components/ShareCard.js';
 import { fetchAdvice, debounce } from './lib/api-client.js';
 import { scoreOutfit } from './lib/rule-scorer.js';
-import { snapToSlot, canSnap } from './lib/slot-system.js';
+import { snapToSlot } from './lib/slot-system.js';
 
 const state = {
   products: [],

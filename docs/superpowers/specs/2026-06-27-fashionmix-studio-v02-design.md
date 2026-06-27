@@ -290,7 +290,7 @@ Content-Type: application/json
 - API key 仅在 `backend/.env` 读 `GEMINI_API_KEY`
 - 前端**永远不**接触 API key
 - V0.2 不暴露公网（无认证，限速 10 req/min/IP via `slowapi`）
-- 端点 CORS 仅允许 `http://localhost:8000`
+- 端点 CORS 允许 `http://localhost:8000`、`http://127.0.0.1:8000`、以及 `null` origin（file:// 协议需要）
 
 ---
 

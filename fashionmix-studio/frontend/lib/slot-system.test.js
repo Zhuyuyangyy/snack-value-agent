@@ -1,18 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { snapToSlot, SLOT_LAYOUT, canSnap } from './slot-system.js';
+import { snapToSlot, SLOT_LAYOUT, canSnap, slotPixelPosition } from './slot-system.js';
 
 test('SLOT_LAYOUT has 7 slots', () => {
   assert.equal(Object.keys(SLOT_LAYOUT).length, 7);
 });
 
 test('snapToSlot returns matching slot for category', () => {
-  const slot = snapToSlot('top', { x: 100, y: 300 });
+  const slot = snapToSlot('top');
   assert.equal(slot, 'upper');
 });
 
 test('snapToSlot returns null for unknown category', () => {
-  const slot = snapToSlot('unknown', { x: 100, y: 300 });
+  const slot = snapToSlot('unknown');
   assert.equal(slot, null);
 });
 
@@ -32,4 +32,22 @@ test('SLOT_LAYOUT entries have x, y, zIndex', () => {
     assert.ok(typeof def.y === 'number', `${name} missing y`);
     assert.ok(typeof def.zIndex === 'number', `${name} missing zIndex`);
   }
+});
+
+test('slotPixelPosition scales fraction to pixels', () => {
+  const pos = slotPixelPosition('upper', 400, 800);
+  // 0.50 * 400 = 200, 0.35 * 800 = 280, zIndex = 400
+  assert.equal(pos.x, 200);
+  assert.equal(pos.y, 280);
+  assert.equal(pos.zIndex, 400);
+});
+
+test('slotPixelPosition throws on unknown slot', () => {
+  assert.throws(() => slotPixelPosition('nonexistent', 400, 800), /Unknown slot/);
+});
+
+test('slotPixelPosition returns hand at left side (x=0.18)', () => {
+  const pos = slotPixelPosition('hand', 500, 1000);
+  assert.equal(pos.x, 90);  // 0.18 * 500
+  assert.equal(pos.zIndex, 700);
 });

@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "items": [
+    { "id": "skirt_001", "name": "棕色格纹蛋糕短裙", "price": 49.7, "category": "skirt", "slot": "lower", "image": "assets/items/skirt_001.png", "styleTags": ["古早", "棕色系", "学院", "甜酷"], "riskTags": ["偏短", "材质不确定"], "qualityScore": 68, "photoScore": 82, "dailyScore": 45 },
+    { "id": "skirt_002", "name": "黑色蕾丝蓬蓬裙", "price": 65.0, "category": "skirt", "slot": "lower", "image": "assets/items/skirt_002.png", "styleTags": ["暗黑", "哥特", "黑色系"], "riskTags": ["蕾丝易勾丝"], "qualityScore": 62, "photoScore": 88, "dailyScore": 30 },
+    { "id": "skirt_003", "name": "白色棉麻长裙", "price": 38.5, "category": "skirt", "slot": "lower", "image": "assets/items/skirt_003.png", "styleTags": ["学院", "文艺", "白色系"], "riskTags": ["易皱"], "qualityScore": 75, "photoScore": 60, "dailyScore": 80 },
+    { "id": "skirt_004", "name": "酒红丝绒中长裙", "price": 88.0, "category": "skirt", "slot": "lower", "image": "assets/items/skirt_004.png", "styleTags": ["宫廷", "酒红系", "复古"], "riskTags": ["丝绒易压痕"], "qualityScore": 78, "photoScore": 90, "dailyScore": 40 },
+    { "id": "skirt_005", "name": "深灰百褶短裙", "price": 29.9, "category": "skirt", "slot": "lower", "image": "assets/items/skirt_005.png", "styleTags": ["学院", "JK", "灰色系"], "riskTags": ["偏短", "起球风险"], "qualityScore": 60, "photoScore": 70, "dailyScore": 65 },
+    { "id": "skirt_006", "name": "米色高腰阔腿裤裙", "price": 55.0, "category": "skirt", "slot": "lower", "image": "assets/items/skirt_006.png", "styleTags": ["日常", "米色系", "通勤"], "riskTags": [], "qualityScore": 80, "photoScore": 55, "dailyScore": 90 },
+
+    { "id": "top_001", "name": "复古蕾丝内搭吊带", "price": 29.9, "category": "top", "slot": "upper", "image": "assets/items/top_001.png", "styleTags": ["古早", "蕾丝", "内搭"], "riskTags": ["蕾丝易勾"], "qualityScore": 70, "photoScore": 85, "dailyScore": 50 },
+    { "id": "top_002", "name": "白色荷叶边衬衫", "price": 39.0, "category": "top", "slot": "upper", "image": "assets/items/top_002.png", "styleTags": ["王子系", "学院", "白色系"], "riskTags": ["荷叶边需熨烫"], "qualityScore": 78, "photoScore": 82, "dailyScore": 70 },
+    { "id": "top_003", "name": "黑色亮面短马甲", "price": 28.0, "category": "top", "slot": "upper", "image": "assets/items/top_003.png", "styleTags": ["王子系", "黑色系", "甜酷"], "riskTags": ["亮面易显廉价"], "qualityScore": 55, "photoScore": 75, "dailyScore": 50 },
+    { "id": "top_004", "name": "灰色格纹西装外套", "price": 98.0, "category": "top", "slot": "upper", "image": "assets/items/top_004.png", "styleTags": ["学院", "英伦", "灰色系"], "riskTags": ["偏大"], "qualityScore": 82, "photoScore": 80, "dailyScore": 85 },
+    { "id": "top_005", "name": "哥特黑色蕾丝上衣", "price": 48.0, "category": "top", "slot": "upper", "image": "assets/items/top_005.png", "styleTags": ["哥特", "暗黑", "黑色系"], "riskTags": ["搭配难度高"], "qualityScore": 65, "photoScore": 90, "dailyScore": 25 },
+    { "id": "top_006", "name": "酒红丝绒小外套", "price": 78.0, "category": "top", "slot": "upper", "image": "assets/items/top_006.png", "styleTags": ["宫廷", "酒红系", "复古"], "riskTags": ["丝绒需养护"], "qualityScore": 80, "photoScore": 88, "dailyScore": 50 },
+
+    { "id": "pants_001", "name": "黑色南瓜裤", "price": 35.0, "category": "pants", "slot": "lower", "image": "assets/items/pants_001.png", "styleTags": ["王子系", "南瓜裤", "黑色系"], "riskTags": ["版型挑人"], "qualityScore": 70, "photoScore": 80, "dailyScore": 60 },
+    { "id": "pants_002", "name": "白色蕾丝灯笼裤", "price": 42.0, "category": "pants", "slot": "lower", "image": "assets/items/pants_002.png", "styleTags": ["古早", "白色系", "甜酷"], "riskTags": ["易透"], "qualityScore": 65, "photoScore": 78, "dailyScore": 45 },
+    { "id": "pants_003", "name": "格纹百褶短裤", "price": 32.0, "category": "pants", "slot": "lower", "image": "assets/items/pants_003.png", "styleTags": ["JK", "学院", "格纹"], "riskTags": ["偏短"], "qualityScore": 68, "photoScore": 75, "dailyScore": 70 },
+    { "id": "pants_004", "name": "深灰直筒西装裤", "price": 68.0, "category": "pants", "slot": "lower", "image": "assets/items/pants_004.png", "styleTags": ["学院", "通勤", "灰色系"], "riskTags": [], "qualityScore": 82, "photoScore": 65, "dailyScore": 92 },
+
+    { "id": "shoes_001", "name": "玛丽珍厚底小皮鞋", "price": 58.0, "category": "shoes", "slot": "feet", "image": "assets/items/shoes_001.png", "styleTags": ["王子系", "玛丽珍", "黑色系"], "riskTags": [], "qualityScore": 78, "photoScore": 85, "dailyScore": 65 },
+    { "id": "shoes_002", "name": "棕色乐福鞋", "price": 49.0, "category": "shoes", "slot": "feet", "image": "assets/items/shoes_002.png", "styleTags": ["学院", "乐福", "棕色系"], "riskTags": ["皮面需养护"], "qualityScore": 75, "photoScore": 70, "dailyScore": 88 },
+    { "id": "shoes_003", "name": "银色细跟短靴", "price": 88.0, "category": "shoes", "slot": "feet", "image": "assets/items/shoes_003.png", "styleTags": ["哥特", "银色系", "舞台"], "riskTags": ["日常难穿"], "qualityScore": 70, "photoScore": 95, "dailyScore": 15 },
+    { "id": "shoes_004", "name": "白色帆布鞋", "price": 25.0, "category": "shoes", "slot": "feet", "image": "assets/items/shoes_004.png", "styleTags": ["日常", "白色系", "学院"], "riskTags": ["易脏"], "qualityScore": 60, "photoScore": 50, "dailyScore": 95 },
+
+    { "id": "socks_001", "name": "白色过膝长袜", "price": 12.0, "category": "socks", "slot": "feet", "image": "assets/items/socks_001.png", "styleTags": ["王子系", "白色系", "长袜"], "riskTags": ["易下滑"], "qualityScore": 55, "photoScore": 80, "dailyScore": 60 },
+    { "id": "socks_002", "name": "黑色蕾丝中筒袜", "price": 9.9, "category": "socks", "slot": "feet", "image": "assets/items/socks_002.png", "styleTags": ["哥特", "黑色系", "蕾丝"], "riskTags": ["蕾丝勾丝"], "qualityScore": 50, "photoScore": 78, "dailyScore": 40 },
+    { "id": "socks_003", "name": "格纹学院过膝袜", "price": 15.0, "category": "socks", "slot": "feet", "image": "assets/items/socks_003.png", "styleTags": ["JK", "学院", "格纹"], "riskTags": ["起球"], "qualityScore": 62, "photoScore": 75, "dailyScore": 70 },
+
+    { "id": "acc_001", "name": "黑色蝴蝶领结", "price": 8.0, "category": "accessory", "slot": "neck", "image": "assets/items/acc_001.png", "styleTags": ["王子系", "黑色系", "领结"], "riskTags": [], "qualityScore": 70, "photoScore": 88, "dailyScore": 60 },
+    { "id": "acc_002", "name": "十字架珍珠项链", "price": 9.9, "category": "accessory", "slot": "neck", "image": "assets/items/acc_002.png", "styleTags": ["哥特", "银色系", "项链"], "riskTags": ["金属镀层"], "qualityScore": 55, "photoScore": 80, "dailyScore": 50 },
+    { "id": "acc_003", "name": "黑色小礼帽", "price": 38.0, "category": "accessory", "slot": "head", "image": "assets/items/acc_003.png", "styleTags": ["宫廷", "黑色系", "帽子"], "riskTags": ["版型硬"], "qualityScore": 72, "photoScore": 92, "dailyScore": 35 },
+    { "id": "acc_004", "name": "蕾丝发带", "price": 6.5, "category": "accessory", "slot": "head", "image": "assets/items/acc_004.png", "styleTags": ["古早", "白色系", "发饰"], "riskTags": [], "qualityScore": 60, "photoScore": 70, "dailyScore": 75 },
+    { "id": "acc_005", "name": "复古皮质小包", "price": 48.0, "category": "accessory", "slot": "hand", "image": "assets/items/acc_005.png", "styleTags": ["复古", "棕色系", "包包"], "riskTags": ["五金易掉色"], "qualityScore": 70, "photoScore": 82, "dailyScore": 70 },
+    { "id": "acc_006", "name": "黑色蕾丝手套", "price": 11.0, "category": "accessory", "slot": "hand", "image": "assets/items/acc_006.png", "styleTags": ["哥特", "黑色系", "手套"], "riskTags": ["蕾丝勾丝"], "qualityScore": 58, "photoScore": 75, "dailyScore": 30 },
+    { "id": "acc_007", "name": "银色复古手杖", "price": 68.0, "category": "accessory", "slot": "hand", "image": "assets/items/acc_007.png", "styleTags": ["宫廷", "银色系", "道具"], "riskTags": ["仅拍照"], "qualityScore": 65, "photoScore": 95, "dailyScore": 5 }
+  ]
+}

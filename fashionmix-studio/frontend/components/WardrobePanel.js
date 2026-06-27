@@ -17,7 +17,7 @@ export const WardrobePanel = {
       }
       grid.innerHTML = s.products.map(item => `
         <div class="item-card" draggable="true" data-id="${item.id}">
-          <img class="item-img" src="../${item.image}" alt="${item.name}" loading="lazy"
+          <img class="item-img" src="${item.image}" alt="${item.name}" loading="lazy"
                onerror="this.style.background='linear-gradient(135deg,#2a2a3a,#0e0e18)';this.removeAttribute('src')">
           <div class="item-name">${escapeHtml(item.name)}</div>
           <div class="item-price">¥${item.price.toFixed(2)}</div>

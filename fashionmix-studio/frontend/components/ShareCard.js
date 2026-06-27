@@ -40,7 +40,7 @@ function refreshShareCard(s) {
   const total = items.reduce((a, it) => a + it.price, 0);
   itemsEl.innerHTML = items.slice(0, 4).map(it => `
     <div class="share-item">
-      <img src="../${it.image}" alt="${escapeHtml(it.name)}" onerror="this.style.display='none'">
+      <img src="${it.image}" alt="${escapeHtml(it.name)}" onerror="this.style.display='none'">
       <div class="share-item-name">${escapeHtml(it.name)}</div>
       <div class="share-item-price">¥${it.price.toFixed(2)}</div>
     </div>

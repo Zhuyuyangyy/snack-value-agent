@@ -26,7 +26,9 @@ function emit() {
 }
 
 async function loadProducts() {
-  const res = await fetch('../data/products.json');
+  // Served from fashionmix-studio/ root via start-dev scripts.
+  const res = await fetch('data/products.json');
+  if (!res.ok) throw new Error(`products.json ${res.status}`);
   const data = await res.json();
   state.products = data.items;
   emit();

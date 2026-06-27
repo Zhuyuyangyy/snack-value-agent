@@ -280,7 +280,7 @@ Content-Type: application/json
 |------|------|
 | `styleConsistency` | styleTags 交集² ÷ (A∪B 数量 × A∩B 数量)，截断 0-100 |
 | `colorHarmony` | 主色数量：1 色→100 / 2 色→80 / 3 色→60 / ≥4 色→40 |
-| `layerCompleteness` | 是否有 upper+lower+feet+(neck\|extra) → 100；按缺失项扣 25 分/项 |
+| `layerCompleteness` | 加权累加：upper +30 / lower +30 / feet +25 / (neck\|extra\|head) +15，封顶 100 |
 | `photoScore` | 单品 photoScore 加权平均（weight=price） |
 | `dailyScore` | 单品 dailyScore 加权平均（weight=price） |
 | `riskScore` | 100 − riskTags 总数 × 15，封底 0 |

@@ -40,6 +40,23 @@ test('color harmony: 1 color = 100', () => {
   assert.equal(r.scores.colorHarmony, 100);
 });
 
+test('color harmony: 2 colors = 80', () => {
+  const r = scoreOutfit([
+    mkItem({ styleTags: ['黑色系'] }),
+    mkItem({ styleTags: ['白色系'] }),
+  ]);
+  assert.equal(r.scores.colorHarmony, 80);
+});
+
+test('color harmony: 3 colors = 60', () => {
+  const r = scoreOutfit([
+    mkItem({ styleTags: ['黑色系'] }),
+    mkItem({ styleTags: ['白色系'] }),
+    mkItem({ styleTags: ['红色系'] }),
+  ]);
+  assert.equal(r.scores.colorHarmony, 60);
+});
+
 test('color harmony: 4+ colors = 40', () => {
   const r = scoreOutfit([
     mkItem({ styleTags: ['黑色系'] }),

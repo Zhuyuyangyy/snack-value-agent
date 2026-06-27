@@ -1244,8 +1244,8 @@ function styleConsistency(items) {
 }
 
 function colorHarmony(items) {
-  const n = items.reduce((acc, it) =>
-    acc + it.styleTags.filter(t => t.endsWith('系')).length, 0);
+  const distinct = new Set(items.flatMap(it => it.styleTags.filter(t => t.endsWith('系'))));
+  const n = distinct.size;
   if (n <= 1) return 100;
   if (n === 2) return 80;
   if (n === 3) return 60;

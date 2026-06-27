@@ -26,8 +26,10 @@ function emit() {
 }
 
 async function loadProducts() {
-  // Served from fashionmix-studio/ root via start-dev scripts.
-  const res = await fetch('data/products.json');
+  // app.js lives at /frontend/app.js, products.json lives at /data/products.json.
+  // We need an absolute path so it's resolved relative to the server root,
+  // not the current page (which would give /frontend/data/products.json).
+  const res = await fetch('/data/products.json');
   if (!res.ok) throw new Error(`products.json ${res.status}`);
   const data = await res.json();
   state.products = data.items;

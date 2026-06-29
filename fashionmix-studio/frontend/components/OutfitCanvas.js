@@ -1,10 +1,11 @@
 /**
  * Center column: mannequin + placed items, drop target.
+ * Per-slot x-offsets give items a horizontal spread (no center-stack overlap).
  */
-import { SLOT_LAYOUT, slotPixelPosition, canSnap } from '../lib/slot-system.js';
+import { SLOT_LAYOUT, slotPixelPosition } from '../lib/slot-system.js';
 
 export const OutfitCanvas = {
-  mount(root, state, { onClearSlot, onClearAll }) {
+  mount(root, state, { onClearSlot, onClearAll, onSetIntent }) {
     root.innerHTML = `
       <div class="canvas-header">
         <div class="canvas-title">搭配画布</div>
@@ -31,11 +32,14 @@ export const OutfitCanvas = {
     const placedLayer = root.querySelector('#placed-layer');
     const totalEl = root.querySelector('#canvas-total');
 
+    // Visual width of each placed item in px (used for centering via left = x - half).
+    const ITEM_HALF = 60;
+
     function drawSlots() {
       const w = region.clientWidth;
       const h = region.clientHeight;
       const markers = root.querySelector('#slot-markers');
-      markers.innerHTML = Object.entries(SLOT_LAYOUT).map(([id, def]) => {
+      markers.innerHTML = Object.entries(SLOT_LAYOUT).map(([id]) => {
         const { x, y } = slotPixelPosition(id, w, h);
         return `<div class="slot-marker" data-slot="${id}" style="left:${x}px;top:${y}px"></div>`;
       }).join('');
@@ -46,15 +50,23 @@ export const OutfitCanvas = {
       const h = region.clientHeight;
       placedLayer.innerHTML = '';
       let total = 0;
+      // Per-slot small offsets so 3 items in stacked slots don't perfectly overlap.
+      const xJitter = { upper: -20, lower: 20, feet: 0, neck: 0, head: 0, extra: 0, hand: 80 };
       for (const [slot, item] of s.placedItems.entries()) {
         total += item.price;
-        const { x, y, zIndex } = slotPixelPosition(slot, w, h);
-        const el = document.createElement('img');
+        const { y, zIndex } = slotPixelPosition(slot, w, h);
+        const xBase = slotPixelPosition(slot, w, h).x;
+        const x = xBase + (xJitter[slot] || 0);
+        const el = document.createElement('div');
         el.className = 'placed-item';
-        el.src = `${item.image}`;
-        el.alt = item.name;
-        el.style.left = `${x - 60}px`;
-        el.style.top = `${y - 60}px`;
+        el.innerHTML = `
+          <img src="${item.image}" alt="${item.name}"
+               onerror="this.style.display='none'; this.parentElement.classList.add('placeholder')">
+          <div class="placed-name">${item.name}</div>
+          <div class="placed-price">¥${item.price.toFixed(2)}</div>
+        `;
+        el.style.left = `${x - ITEM_HALF}px`;
+        el.style.top = `${y - ITEM_HALF}px`;
         el.style.zIndex = zIndex;
         el.title = item.name;
         el.draggable = true;
@@ -81,18 +93,13 @@ export const OutfitCanvas = {
       import('../app.js').then(({ placeItem }) => placeItem(item));
     });
 
+    // Quick-action buttons: actually call setIntent + show feedback.
     root.querySelectorAll('.quick-actions button').forEach(btn => {
       btn.addEventListener('click', () => {
         const intent = btn.dataset.intent;
-        import('../app.js').then(({ state: getState, subscribe: _sub }) => {
-          import('../lib/api-client.js').then(async ({ fetchAdvice }) => {
-            const items = [...getState().placedItems.values()];
-            try {
-              const result = await fetchAdvice(items, intent);
-              getState().radar = result;
-            } catch (e) { console.warn(e); }
-          });
-        });
+        btn.classList.add('active');
+        setTimeout(() => btn.classList.remove('active'), 600);
+        if (onSetIntent) onSetIntent(intent);
       });
     });
 

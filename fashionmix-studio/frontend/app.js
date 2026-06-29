@@ -9,7 +9,7 @@ import { fetchAdvice, debounce } from './lib/api-client.js';
 import { scoreOutfit } from './lib/rule-scorer.js';
 import { snapToSlot } from './lib/slot-system.js';
 
-const state = {
+export const state = {
   products: [],
   placedItems: new Map(), // slot id -> item
   intent: null,
@@ -19,21 +19,32 @@ const state = {
 const listeners = new Set();
 export function subscribe(fn) {
   listeners.add(fn);
+  // Immediately notify new subscribers so they render current state
+  // (fixes race where emit() fires before subscribe() is registered).
+  try { fn(state); } catch (e) { console.error('subscribe render error:', e); }
   return () => listeners.delete(fn);
 }
 function emit() {
   for (const fn of listeners) fn(state);
 }
 
+export function setIntent(intent) {
+  state.intent = intent;
+  scheduleRadarUpdate();
+}
+
 async function loadProducts() {
   // app.js lives at /frontend/app.js, products.json lives at /data/products.json.
-  // We need an absolute path so it's resolved relative to the server root,
-  // not the current page (which would give /frontend/data/products.json).
-  const res = await fetch('/data/products.json');
-  if (!res.ok) throw new Error(`products.json ${res.status}`);
-  const data = await res.json();
-  state.products = data.items;
-  emit();
+  // Use absolute path so it resolves to server root regardless of page URL.
+  try {
+    const res = await fetch('/data/products.json');
+    if (!res.ok) throw new Error(`products.json ${res.status}`);
+    const data = await res.json();
+    state.products = data.items;
+    emit();
+  } catch (e) {
+    console.error('Failed to load products:', e);
+  }
 }
 
 export function placeItem(item) {
@@ -59,10 +70,15 @@ export function clearAll() {
 
 const scheduleRadarUpdate = debounce(async () => {
   const items = [...state.placedItems.values()];
+  if (items.length === 0) {
+    state.radar = null;
+    emit();
+    return;
+  }
   // Instant local rule preview
   state.radar = scoreOutfit(items);
   emit();
-  // LLM call
+  // LLM call (if API key set)
   try {
     const llm = await fetchAdvice(items, state.intent);
     state.radar = llm;
@@ -79,6 +95,7 @@ function bootstrap() {
   OutfitCanvas.mount(document.getElementById('canvas'), state, {
     onClearSlot: clearSlot,
     onClearAll: clearAll,
+    onSetIntent: setIntent,
   });
   StyleRadar.mount(document.getElementById('radar'), state, {});
   ShareCard.mount(document.getElementById('share'), state, {});

@@ -3,7 +3,7 @@ from datetime import date
 from pathlib import Path
 from typing import Optional, List
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -12,10 +12,26 @@ from .comparator import SnackComparator
 from .models import SnackItem, UserPreference
 from .extractor import extract_fields_from_text, extracted_to_dict
 from .config import MAX_IMAGE_SIZE_BYTES
+from . import config
 from . import database as db
+from .billing import check_and_record_usage, require_api_key, usage_today
 
 
-app = FastAPI(title="SnackValue Agent", version="0.3.0")
+APP_VERSION = "0.4.0"
+
+app = FastAPI(title="SnackValue Agent", version=APP_VERSION)
+
+# V0.4：托管部署时允许配置跨域来源（如小程序 H5 / 独立前端域名）
+_cors = config.cors_origins()
+if _cors:
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -213,11 +229,12 @@ def _result_to_dict(result) -> dict:
 # ---------------------------------------------------------------------- #
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    """健康检查（免认证，供容器 HEALTHCHECK / 负载均衡探活）。"""
+    return {"status": "ok", "version": APP_VERSION}
 
 
 @app.get("/api/baseline")
-def get_baseline():
+def get_baseline(api_key: str = Depends(require_api_key)):
     price, source = db.load_baseline()
     return BaselineOut(
         baseline_price_per_g=None if price == float("inf") else round(price, 6),
@@ -226,26 +243,47 @@ def get_baseline():
 
 
 @app.get("/api/history")
-def get_history(limit: int = 50):
+def get_history(limit: int = 50, api_key: str = Depends(require_api_key)):
     return db.load_history(limit=limit)
 
 
 @app.get("/api/preference")
-def get_preference():
+def get_preference(api_key: str = Depends(require_api_key)):
     return db.load_user_preference()
 
 
 @app.put("/api/preference")
-def put_preference(pref: UserPreferenceIn):
+def put_preference(pref: UserPreferenceIn, api_key: str = Depends(require_api_key)):
     db.save_user_preference(pref.preferred_flavors, pref.disliked_flavors, pref.daily_intake_g)
     return {"status": "ok", "preference": db.load_user_preference()}
 
 
+@app.get("/api/usage")
+def get_usage(api_key: str = Depends(require_api_key)):
+    """当前 key 今日用量 / 配额 / 剩余次数（计费与限流的对账入口）。"""
+    quota = config.daily_quota()
+    usage = usage_today(api_key)
+    return {
+        "api_key_mode": bool(config.api_keys()),
+        "date": date.today().isoformat(),
+        "usage": usage,
+        "daily_quota": quota if quota > 0 else None,
+        "remaining": max(0, quota - usage["total"]) if quota > 0 else None,
+    }
+
+
+@app.get("/api/stats")
+def get_stats(api_key: str = Depends(require_api_key)):
+    """经营指标：累计评估、活跃天数、折扣节省等（运营看板 / 「省钱报告」数据源）。"""
+    return db.load_stats()
+
+
 @app.post("/api/compare")
-def compare(req: CompareRequest):
+def compare(req: CompareRequest, api_key: str = Depends(require_api_key)):
     """批量比价：输入多个商品，输出排序后的推荐表，并更新历史基线。"""
     if not req.items:
         raise HTTPException(status_code=422, detail="items 不能为空")
+    check_and_record_usage(api_key, "compare")
 
     # 加载用户偏好与历史基线
     pref_dict = db.load_user_preference()
@@ -283,7 +321,7 @@ def compare(req: CompareRequest):
 # V0.2 截图 OCR 提取
 # ------------------------------------------------------------------ #
 @app.post("/api/extract")
-async def extract_from_screenshot(file: UploadFile = File(...)):
+async def extract_from_screenshot(file: UploadFile = File(...), api_key: str = Depends(require_api_key)):
     """上传商品截图 → OCR → 正则/规则提取 → 返回候选字段 + OCR 元信息。
 
     OCR 顺序：云端 MiniMax（如果有 key） → 本地 RapidOCR（兜底）。
@@ -298,6 +336,7 @@ async def extract_from_screenshot(file: UploadFile = File(...)):
     image_bytes = await file.read()
     if not image_bytes:
         raise HTTPException(status_code=422, detail="上传文件为空")
+    check_and_record_usage(api_key, "extract")
 
     if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
         raise HTTPException(
@@ -333,13 +372,14 @@ async def extract_from_screenshot(file: UploadFile = File(...)):
 
 
 @app.post("/api/extract_text")
-def extract_from_pasted_text(body: ExtractTextIn):
+def extract_from_pasted_text(body: ExtractTextIn, api_key: str = Depends(require_api_key)):
     """手动粘贴 OCR 文本 → 正则/规则提取 → 返回候选字段 + 置信度。
 
     不依赖 MiniMax API，纯本地提取。
     """
     if not body.text.strip():
         raise HTTPException(status_code=422, detail="text 不能为空")
+    check_and_record_usage(api_key, "extract_text")
     fields = extract_fields_from_text(body.text)
     return extracted_to_dict(fields)
 

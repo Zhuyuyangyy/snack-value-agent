@@ -1,6 +1,6 @@
 # SnackValue Agent
 
-临期零食**真实价值决策 Agent**。V0.3 升级：37 字段（P0+P1 子集）+ 4 维度评分体系 + Apple 风格 UI + 多维度决策卡片。
+临期零食**真实价值决策 Agent**。V0.4 升级：商业化基础设施（API Key 认证 + 每日配额 + 用量计量 + 经营指标）+ Docker 一键部署。V0.3：37 字段（P0+P1 子集）+ 4 维度评分体系 + Apple 风格 UI + 多维度决策卡片。
 
 ## 启动
 
@@ -10,6 +10,27 @@ uvicorn backend.app:app --reload --port 8765
 ```
 
 打开 http://localhost:8765
+
+### Docker 部署（V0.4）
+
+```bash
+docker compose up -d
+# 或
+docker build -t snackvalue . && docker run -p 8765:8765 -v snackvalue-data:/data snackvalue
+```
+
+SQLite 数据与 RapidOCR 模型缓存都在 `/data` 卷中，容器重建不丢数据。环境变量样例见 `.env.example`。
+
+## 商业化模式（V0.4）
+
+默认**开放模式**：不配置任何商业化环境变量时，行为与 V0.3 完全一致（本地免费、不认证、不限量）。托管部署时通过环境变量开启：
+
+- `SNACKVALUE_API_KEYS=key-a,key-b` — 开启 API Key 认证，所有 `/api/*`（除 `/api/health`）要求 `X-API-Key` 请求头，无效返回 401
+- `SNACKVALUE_DAILY_QUOTA=50` — 计量端点（compare / extract / extract_text）每 key 每日上限，超额返回 429
+- 用量按 key × 日 × 端点落在 SQLite `api_usage` 表，`GET /api/usage` 实时对账
+- `GET /api/stats` 输出经营指标（累计评估、活跃天数、折扣节省额等）
+
+商业模式与路线图详见 `docs/commercialization/2026-07-13-v04-commercialization-roadmap.md`。
 
 ## V0.3 核心升级
 
@@ -56,6 +77,8 @@ value_score = historical_baseline / real_value_price_per_g
 | `GET /api/baseline` | 历史最低克单价 |
 | `GET /api/history` | 历史购买记录 |
 | `GET/PUT /api/preference` | 用户偏好 |
+| `GET /api/usage` | 今日用量 / 配额 / 剩余（V0.4）|
+| `GET /api/stats` | 经营指标：累计评估、节省金额等（V0.4）|
 
 ### `/api/compare` 响应（V0.3）
 
@@ -109,6 +132,10 @@ pytest tests/ -v
 | `CLOUD_OCR_TIMEOUT_SECONDS` | 30 | 云端 OCR 超时 |
 | `LOCAL_OCR_MAX_CONCURRENCY` | 1 | 本地 OCR 并发上限 |
 | `MAX_IMAGE_SIZE_BYTES` | 10485760 | 上传图片大小上限（10MB）|
+| `SNACKVALUE_API_KEYS` | 空 | 逗号分隔的授权 key；空 = 开放模式不认证（V0.4）|
+| `SNACKVALUE_DAILY_QUOTA` | 0 | 计量端点每 key 每日上限；0 = 不限（V0.4）|
+| `SNACKVALUE_CORS_ORIGINS` | 空 | 允许跨域来源，逗号分隔；空 = 不开 CORS（V0.4）|
+| `SNACKVALUE_DB_PATH` | 空 | SQLite 路径覆盖；空 = 项目内 `data/`（V0.4）|
 
 ## 数据库迁移
 

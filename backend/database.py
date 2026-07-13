@@ -1,5 +1,6 @@
 """历史基线持久化：记录历史最低克单价与历史购买商品，形成个人价格记忆。"""
 import json
+import os
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path
@@ -8,7 +9,15 @@ from typing import Optional
 from .models import SnackItem, EvaluationResult
 
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "snack_history.db"
+def _default_db_path() -> Path:
+    """DB 路径：SNACKVALUE_DB_PATH 环境变量优先（容器部署挂载卷用），否则项目内 data/。"""
+    env_path = os.environ.get("SNACKVALUE_DB_PATH", "")
+    if env_path:
+        return Path(env_path)
+    return Path(__file__).resolve().parent.parent / "data" / "snack_history.db"
+
+
+DEFAULT_DB_PATH = _default_db_path()
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -231,6 +240,58 @@ def load_history(limit: int = 50, db_path: Path = DEFAULT_DB_PATH) -> list[dict]
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def load_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
+    """V0.4 经营指标：给「帮你省了多少钱」故事与运营看板提供数据。
+
+    - total_evaluations / total_weight_g / active_days：使用规模
+    - evaluations_last_7_days：近期活跃（留存代理指标）
+    - avg/min price_per_g：价格记忆的价值
+    - discount_savings：Σ(listed_price - total_price)，真实到手折扣节省
+    - estimated_savings_vs_avg：Σ max(0, (个人平均克单价 - 该单克单价) × 克重)，
+      衡量「买得比自己平均水平便宜」省下的钱
+    """
+    conn = _connect(db_path)
+    agg = conn.execute(
+        """
+        SELECT
+            COUNT(*)                          AS total_evaluations,
+            COALESCE(SUM(total_weight_g), 0)  AS total_weight_g,
+            AVG(price_per_g)                  AS avg_price_per_g,
+            MIN(price_per_g)                  AS min_price_per_g,
+            COUNT(DISTINCT substr(created_at, 1, 10)) AS active_days,
+            COALESCE(SUM(
+                CASE WHEN listed_price IS NOT NULL AND total_price IS NOT NULL
+                          AND listed_price > total_price
+                     THEN listed_price - total_price ELSE 0 END
+            ), 0) AS discount_savings
+        FROM snack_history
+        """
+    ).fetchone()
+    recent = conn.execute(
+        "SELECT COUNT(*) AS n FROM snack_history WHERE substr(created_at, 1, 10) >= date('now', '-7 day')"
+    ).fetchone()
+    rows = conn.execute("SELECT price_per_g, total_weight_g FROM snack_history").fetchall()
+    conn.close()
+
+    avg_ppg = agg["avg_price_per_g"]
+    savings_vs_avg = 0.0
+    if avg_ppg:
+        savings_vs_avg = sum(
+            max(0.0, (avg_ppg - r["price_per_g"]) * r["total_weight_g"]) for r in rows
+        )
+
+    return {
+        "total_evaluations": agg["total_evaluations"],
+        "total_weight_g": round(agg["total_weight_g"], 1),
+        "active_days": agg["active_days"],
+        "evaluations_last_7_days": recent["n"],
+        "avg_price_per_g": round(avg_ppg, 6) if avg_ppg is not None else None,
+        "min_price_per_g": round(agg["min_price_per_g"], 6) if agg["min_price_per_g"] is not None else None,
+        "discount_savings": round(agg["discount_savings"], 2),
+        "estimated_savings_vs_avg": round(savings_vs_avg, 2),
+    }
 
 
 def load_user_preference(db_path: Path = DEFAULT_DB_PATH) -> dict:

@@ -1,0 +1,20 @@
+services:
+  snackvalue:
+    build: .
+    ports:
+      - "8765:8765"
+    volumes:
+      - snackvalue-data:/data
+    environment:
+      # 商业化配置（全部可选，不配置 = 本地开放模式）
+      # SNACKVALUE_API_KEYS: "key-alice,key-bob"   # 启用 API Key 认证
+      # SNACKVALUE_DAILY_QUOTA: "50"               # 每 key 每日计量端点调用上限
+      # SNACKVALUE_CORS_ORIGINS: "https://app.example.com"
+      # 云端 OCR（可选，不配置 = 本地 RapidOCR）
+      # MINIMAX_API_KEY: ""
+      # MINIMAX_GROUP_ID: ""
+      SNACKVALUE_DB_PATH: /data/snack_history.db
+    restart: unless-stopped
+
+volumes:
+  snackvalue-data:

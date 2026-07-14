@@ -15,7 +15,8 @@ from backend.database import _connect, init_db, load_stats
 
 @pytest.fixture
 def client(monkeypatch):
-    """默认开放模式的 TestClient（清掉可能存在的商业化 env）。"""
+    """默认开放模式的 TestClient（清掉可能存在的商业化 env；
+    残留 DB key 由 tests/conftest.py 的 autouse 基线清理）。"""
     monkeypatch.delenv("SNACKVALUE_API_KEYS", raising=False)
     monkeypatch.delenv("SNACKVALUE_DAILY_QUOTA", raising=False)
     from backend.app import app

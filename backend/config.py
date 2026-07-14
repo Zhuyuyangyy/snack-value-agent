@@ -38,3 +38,8 @@ def cors_origins() -> list[str]:
     """允许跨域访问 API 的来源列表（逗号分隔）。空 = 不启用 CORS 中间件。"""
     raw = os.environ.get("SNACKVALUE_CORS_ORIGINS", "")
     return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+def admin_key() -> str:
+    """管理端（/api/admin/*）密钥。空 = 管理端整体关闭（V0.5）。"""
+    return os.environ.get("SNACKVALUE_ADMIN_KEY", "").strip()

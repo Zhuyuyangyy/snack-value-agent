@@ -14,10 +14,19 @@ from .extractor import extract_fields_from_text, extracted_to_dict
 from .config import MAX_IMAGE_SIZE_BYTES
 from . import config
 from . import database as db
-from .billing import check_and_record_usage, require_api_key, usage_today
+from .billing import (
+    check_and_record_usage,
+    issue_key,
+    list_keys,
+    require_admin_key,
+    require_api_key,
+    resolve_daily_quota,
+    revoke_key,
+    usage_today,
+)
 
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 
 app = FastAPI(title="SnackValue Agent", version=APP_VERSION)
 
@@ -235,7 +244,7 @@ def health():
 
 @app.get("/api/baseline")
 def get_baseline(api_key: str = Depends(require_api_key)):
-    price, source = db.load_baseline()
+    price, source = db.load_baseline(api_key=api_key)
     return BaselineOut(
         baseline_price_per_g=None if price == float("inf") else round(price, 6),
         baseline_source=source,
@@ -244,27 +253,27 @@ def get_baseline(api_key: str = Depends(require_api_key)):
 
 @app.get("/api/history")
 def get_history(limit: int = 50, api_key: str = Depends(require_api_key)):
-    return db.load_history(limit=limit)
+    return db.load_history(limit=limit, api_key=api_key)
 
 
 @app.get("/api/preference")
 def get_preference(api_key: str = Depends(require_api_key)):
-    return db.load_user_preference()
+    return db.load_user_preference(api_key=api_key)
 
 
 @app.put("/api/preference")
 def put_preference(pref: UserPreferenceIn, api_key: str = Depends(require_api_key)):
-    db.save_user_preference(pref.preferred_flavors, pref.disliked_flavors, pref.daily_intake_g)
-    return {"status": "ok", "preference": db.load_user_preference()}
+    db.save_user_preference(pref.preferred_flavors, pref.disliked_flavors, pref.daily_intake_g, api_key=api_key)
+    return {"status": "ok", "preference": db.load_user_preference(api_key=api_key)}
 
 
 @app.get("/api/usage")
 def get_usage(api_key: str = Depends(require_api_key)):
     """当前 key 今日用量 / 配额 / 剩余次数（计费与限流的对账入口）。"""
-    quota = config.daily_quota()
+    quota = resolve_daily_quota(api_key)
     usage = usage_today(api_key)
     return {
-        "api_key_mode": bool(config.api_keys()),
+        "api_key_mode": api_key != "anonymous",
         "date": date.today().isoformat(),
         "usage": usage,
         "daily_quota": quota if quota > 0 else None,
@@ -274,8 +283,8 @@ def get_usage(api_key: str = Depends(require_api_key)):
 
 @app.get("/api/stats")
 def get_stats(api_key: str = Depends(require_api_key)):
-    """经营指标：累计评估、活跃天数、折扣节省等（运营看板 / 「省钱报告」数据源）。"""
-    return db.load_stats()
+    """当前租户的省钱报告数据：累计评估、活跃天数、折扣节省等。"""
+    return db.load_stats(api_key=api_key)
 
 
 @app.post("/api/compare")
@@ -285,15 +294,15 @@ def compare(req: CompareRequest, api_key: str = Depends(require_api_key)):
         raise HTTPException(status_code=422, detail="items 不能为空")
     check_and_record_usage(api_key, "compare")
 
-    # 加载用户偏好与历史基线
-    pref_dict = db.load_user_preference()
+    # 加载该租户的用户偏好与历史基线
+    pref_dict = db.load_user_preference(api_key=api_key)
     user_pref = UserPreference(
         preferred_flavors=pref_dict["preferred_flavors"],
         disliked_flavors=pref_dict["disliked_flavors"],
         daily_intake_g=pref_dict["daily_intake_g"],
     )
 
-    baseline_price, baseline_source = db.load_baseline()
+    baseline_price, baseline_source = db.load_baseline(api_key=api_key)
     comparator = SnackComparator(user_preference=user_pref)
     comparator.baseline_price_per_g = baseline_price
     comparator.baseline_source = baseline_source
@@ -301,12 +310,12 @@ def compare(req: CompareRequest, api_key: str = Depends(require_api_key)):
     items = [_to_snack_item(i) for i in req.items]
     results = comparator.evaluate_many(items)
 
-    # 持久化 + 基线更新
+    # 持久化 + 基线更新（都在该租户名下）
     if req.save:
         for r in results:
-            db.save_evaluation(r)
+            db.save_evaluation(r, api_key=api_key)
         if comparator.baseline_price_per_g != float("inf"):
-            db.update_baseline(comparator.baseline_price_per_g, comparator.baseline_source or "")
+            db.update_baseline(comparator.baseline_price_per_g, comparator.baseline_source or "", api_key=api_key)
 
     return {
         "baseline": {
@@ -315,6 +324,46 @@ def compare(req: CompareRequest, api_key: str = Depends(require_api_key)):
         },
         "results": [_result_to_dict(r) for r in results],
     }
+
+
+# ------------------------------------------------------------------ #
+# V0.5 管理端：API Key 生命周期（X-Admin-Key 保护）
+# 支付闭环对接点：支付成功回调 → POST /api/admin/keys 下发；
+# 退款/到期 → DELETE /api/admin/keys/{key} 吊销。
+# ------------------------------------------------------------------ #
+class AdminKeyCreateIn(BaseModel):
+    label: str = ""
+    tier: str = "free"
+    daily_quota: Optional[int] = None  # None = 用全局 SNACKVALUE_DAILY_QUOTA
+
+
+@app.post("/api/admin/keys", status_code=201)
+def admin_create_key(body: AdminKeyCreateIn, _admin: str = Depends(require_admin_key)):
+    """签发新 key。完整 key 仅在本响应中返回一次，之后只能看到脱敏形式。"""
+    try:
+        return issue_key(label=body.label, tier=body.tier, daily_quota=body.daily_quota)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@app.get("/api/admin/keys")
+def admin_list_keys(_admin: str = Depends(require_admin_key)):
+    """全部 key（脱敏）+ 今日/累计用量。"""
+    return {"keys": list_keys()}
+
+
+@app.delete("/api/admin/keys/{key}")
+def admin_revoke_key(key: str, _admin: str = Depends(require_admin_key)):
+    """吊销 key，立即生效。"""
+    if not revoke_key(key):
+        raise HTTPException(status_code=404, detail="key 不存在或已吊销")
+    return {"status": "revoked", "api_key": key}
+
+
+@app.get("/api/admin/stats")
+def admin_global_stats(_admin: str = Depends(require_admin_key)):
+    """全局经营指标（跨全部租户的运营视角）。"""
+    return db.load_stats(api_key=None)
 
 
 # ------------------------------------------------------------------ #

@@ -51,24 +51,38 @@ def init_db(db_path: Path = DEFAULT_DB_PATH) -> None:
             created_at    TEXT NOT NULL
         );
 
+        -- V0.5：baseline / user_preference 按租户（api_key）一行；
+        -- 开放模式下所有数据归 'anonymous' 租户，行为与单例时代一致。
         CREATE TABLE IF NOT EXISTS baseline (
-            id              INTEGER PRIMARY KEY CHECK (id = 1),
+            api_key         TEXT PRIMARY KEY,
             baseline_price_per_g REAL NOT NULL,
             baseline_source TEXT,
             updated_at      TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS user_preference (
-            id              INTEGER PRIMARY KEY CHECK (id = 1),
+            api_key           TEXT PRIMARY KEY,
             preferred_flavors TEXT,
             disliked_flavors  TEXT,
             daily_intake_g     REAL DEFAULT 20.0
+        );
+
+        -- V0.5：DB 托管的 API Key（付费下发/吊销的载体）。
+        -- daily_quota 为 NULL 时用全局 SNACKVALUE_DAILY_QUOTA。
+        CREATE TABLE IF NOT EXISTS api_keys (
+            api_key     TEXT PRIMARY KEY,
+            label       TEXT,
+            tier        TEXT NOT NULL DEFAULT 'free',
+            daily_quota INTEGER,
+            created_at  TEXT NOT NULL,
+            revoked_at  TEXT
         );
         """
     )
     conn.commit()
     conn.close()
     migrate_v023(db_path)
+    migrate_v05(db_path)
 
 
 def migrate_v023(db_path: Path = DEFAULT_DB_PATH) -> None:
@@ -166,7 +180,76 @@ def migrate_v023(db_path: Path = DEFAULT_DB_PATH) -> None:
     conn.close()
 
 
-def save_evaluation(result: EvaluationResult, db_path: Path = DEFAULT_DB_PATH) -> int:
+def migrate_v05(db_path: Path = DEFAULT_DB_PATH) -> None:
+    """V0.4 → V0.5 多租户迁移：所有个人数据按 api_key 隔离。
+
+    幂等。老库（单例 baseline / user_preference，id=1）的存量数据归 'anonymous' 租户。
+    """
+    conn = _connect(db_path)
+
+    # snack_history：补 api_key 列 + 查询索引
+    try:
+        conn.execute("ALTER TABLE snack_history ADD COLUMN api_key TEXT DEFAULT 'anonymous'")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_snack_history_api_key ON snack_history(api_key)")
+
+    # baseline / user_preference：id=1 单例 → api_key 主键
+    def _rebuild_per_key(table: str, create_sql: str, copy_sql: str) -> None:
+        cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table})")]
+        if "api_key" in cols:
+            return
+        conn.executescript(
+            f"""
+            ALTER TABLE {table} RENAME TO {table}_old;
+            {create_sql}
+            {copy_sql}
+            DROP TABLE {table}_old;
+            """
+        )
+
+    _rebuild_per_key(
+        "baseline",
+        """CREATE TABLE baseline (
+            api_key         TEXT PRIMARY KEY,
+            baseline_price_per_g REAL NOT NULL,
+            baseline_source TEXT,
+            updated_at      TEXT NOT NULL
+        );""",
+        """INSERT INTO baseline
+           SELECT 'anonymous', baseline_price_per_g, baseline_source, updated_at
+           FROM baseline_old;""",
+    )
+    _rebuild_per_key(
+        "user_preference",
+        """CREATE TABLE user_preference (
+            api_key           TEXT PRIMARY KEY,
+            preferred_flavors TEXT,
+            disliked_flavors  TEXT,
+            daily_intake_g     REAL DEFAULT 20.0
+        );""",
+        """INSERT INTO user_preference
+           SELECT 'anonymous', preferred_flavors, disliked_flavors, daily_intake_g
+           FROM user_preference_old;""",
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS api_keys (
+            api_key     TEXT PRIMARY KEY,
+            label       TEXT,
+            tier        TEXT NOT NULL DEFAULT 'free',
+            daily_quota INTEGER,
+            created_at  TEXT NOT NULL,
+            revoked_at  TEXT
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_evaluation(result: EvaluationResult, db_path: Path = DEFAULT_DB_PATH, api_key: str = "anonymous") -> int:
     """落库一条评估记录。V0.3 兼容：total_price 允许为 None（用 final_price 代替）。"""
     conn = _connect(db_path)
     cur = conn.execute(
@@ -175,8 +258,8 @@ def save_evaluation(result: EvaluationResult, db_path: Path = DEFAULT_DB_PATH) -
             name, total_price, total_weight_g, flavor_type, flavor_name,
             expiry_date, package_type, quantity, source_text,
             price_per_g, adjusted_price_per_g, value_score, risk_level,
-            recommendation_label, reason, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            recommendation_label, reason, created_at, api_key
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             result.item.name,
@@ -196,6 +279,7 @@ def save_evaluation(result: EvaluationResult, db_path: Path = DEFAULT_DB_PATH) -
             result.recommendation_label,
             result.reason,
             datetime.now().isoformat(),
+            api_key,
         ),
     )
     record_id = cur.lastrowid
@@ -204,46 +288,52 @@ def save_evaluation(result: EvaluationResult, db_path: Path = DEFAULT_DB_PATH) -
     return record_id
 
 
-def load_baseline(db_path: Path = DEFAULT_DB_PATH) -> tuple[float, Optional[str]]:
-    """读取历史最低克单价。无记录时返回 (inf, None)。"""
+def load_baseline(db_path: Path = DEFAULT_DB_PATH, api_key: str = "anonymous") -> tuple[float, Optional[str]]:
+    """读取该租户的历史最低克单价。无记录时返回 (inf, None)。"""
     conn = _connect(db_path)
-    row = conn.execute("SELECT baseline_price_per_g, baseline_source FROM baseline WHERE id = 1").fetchone()
+    row = conn.execute(
+        "SELECT baseline_price_per_g, baseline_source FROM baseline WHERE api_key = ?",
+        (api_key,),
+    ).fetchone()
     conn.close()
     if row is None:
         return float("inf"), None
     return row["baseline_price_per_g"], row["baseline_source"]
 
 
-def update_baseline(price_per_g: float, source: str, db_path: Path = DEFAULT_DB_PATH) -> None:
-    """更新历史最低克单价基线。"""
+def update_baseline(price_per_g: float, source: str, db_path: Path = DEFAULT_DB_PATH, api_key: str = "anonymous") -> None:
+    """更新该租户的历史最低克单价基线。"""
     conn = _connect(db_path)
     conn.execute(
         """
-        INSERT INTO baseline (id, baseline_price_per_g, baseline_source, updated_at)
-        VALUES (1, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
+        INSERT INTO baseline (api_key, baseline_price_per_g, baseline_source, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(api_key) DO UPDATE SET
             baseline_price_per_g = excluded.baseline_price_per_g,
             baseline_source = excluded.baseline_source,
             updated_at = excluded.updated_at
         """,
-        (price_per_g, source, datetime.now().isoformat()),
+        (api_key, price_per_g, source, datetime.now().isoformat()),
     )
     conn.commit()
     conn.close()
 
 
-def load_history(limit: int = 50, db_path: Path = DEFAULT_DB_PATH) -> list[dict]:
-    """读取历史购买记录。"""
+def load_history(limit: int = 50, db_path: Path = DEFAULT_DB_PATH, api_key: str = "anonymous") -> list[dict]:
+    """读取该租户的历史购买记录。"""
     conn = _connect(db_path)
     rows = conn.execute(
-        "SELECT * FROM snack_history ORDER BY created_at DESC LIMIT ?", (limit,)
+        "SELECT * FROM snack_history WHERE api_key = ? ORDER BY created_at DESC LIMIT ?",
+        (api_key, limit),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def load_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
+def load_stats(db_path: Path = DEFAULT_DB_PATH, api_key: Optional[str] = None) -> dict:
     """V0.4 经营指标：给「帮你省了多少钱」故事与运营看板提供数据。
+
+    api_key=None 表示全局统计（运营视角）；传具体 key 则只看该租户（用户省钱报告）。
 
     - total_evaluations / total_weight_g / active_days：使用规模
     - evaluations_last_7_days：近期活跃（留存代理指标）
@@ -252,9 +342,11 @@ def load_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
     - estimated_savings_vs_avg：Σ max(0, (个人平均克单价 - 该单克单价) × 克重)，
       衡量「买得比自己平均水平便宜」省下的钱
     """
+    where = "WHERE api_key = ?" if api_key is not None else ""
+    params: tuple = (api_key,) if api_key is not None else ()
     conn = _connect(db_path)
     agg = conn.execute(
-        """
+        f"""
         SELECT
             COUNT(*)                          AS total_evaluations,
             COALESCE(SUM(total_weight_g), 0)  AS total_weight_g,
@@ -266,13 +358,18 @@ def load_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
                           AND listed_price > total_price
                      THEN listed_price - total_price ELSE 0 END
             ), 0) AS discount_savings
-        FROM snack_history
-        """
+        FROM snack_history {where}
+        """,
+        params,
     ).fetchone()
     recent = conn.execute(
-        "SELECT COUNT(*) AS n FROM snack_history WHERE substr(created_at, 1, 10) >= date('now', '-7 day')"
+        f"""SELECT COUNT(*) AS n FROM snack_history
+            {where + " AND" if where else "WHERE"} substr(created_at, 1, 10) >= date('now', '-7 day')""",
+        params,
     ).fetchone()
-    rows = conn.execute("SELECT price_per_g, total_weight_g FROM snack_history").fetchall()
+    rows = conn.execute(
+        f"SELECT price_per_g, total_weight_g FROM snack_history {where}", params
+    ).fetchall()
     conn.close()
 
     avg_ppg = agg["avg_price_per_g"]
@@ -294,11 +391,12 @@ def load_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
     }
 
 
-def load_user_preference(db_path: Path = DEFAULT_DB_PATH) -> dict:
-    """读取用户偏好。"""
+def load_user_preference(db_path: Path = DEFAULT_DB_PATH, api_key: str = "anonymous") -> dict:
+    """读取该租户的用户偏好。"""
     conn = _connect(db_path)
     row = conn.execute(
-        "SELECT preferred_flavors, disliked_flavors, daily_intake_g FROM user_preference WHERE id = 1"
+        "SELECT preferred_flavors, disliked_flavors, daily_intake_g FROM user_preference WHERE api_key = ?",
+        (api_key,),
     ).fetchone()
     conn.close()
     if row is None:
@@ -310,19 +408,19 @@ def load_user_preference(db_path: Path = DEFAULT_DB_PATH) -> dict:
     }
 
 
-def save_user_preference(preferred: list[str], disliked: list[str], daily_intake: float, db_path: Path = DEFAULT_DB_PATH) -> None:
-    """保存用户偏好。"""
+def save_user_preference(preferred: list[str], disliked: list[str], daily_intake: float, db_path: Path = DEFAULT_DB_PATH, api_key: str = "anonymous") -> None:
+    """保存该租户的用户偏好。"""
     conn = _connect(db_path)
     conn.execute(
         """
-        INSERT INTO user_preference (id, preferred_flavors, disliked_flavors, daily_intake_g)
-        VALUES (1, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
+        INSERT INTO user_preference (api_key, preferred_flavors, disliked_flavors, daily_intake_g)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(api_key) DO UPDATE SET
             preferred_flavors = excluded.preferred_flavors,
             disliked_flavors = excluded.disliked_flavors,
             daily_intake_g = excluded.daily_intake_g
         """,
-        (json.dumps(preferred, ensure_ascii=False), json.dumps(disliked, ensure_ascii=False), daily_intake),
+        (api_key, json.dumps(preferred, ensure_ascii=False), json.dumps(disliked, ensure_ascii=False), daily_intake),
     )
     conn.commit()
     conn.close()

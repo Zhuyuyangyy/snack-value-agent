@@ -1,6 +1,6 @@
 # SnackValue Agent
 
-临期零食**真实价值决策 Agent**。V0.4 升级：商业化基础设施（API Key 认证 + 每日配额 + 用量计量 + 经营指标）+ Docker 一键部署。V0.3：37 字段（P0+P1 子集）+ 4 维度评分体系 + Apple 风格 UI + 多维度决策卡片。
+临期零食**真实价值决策 Agent**。V0.5 升级：多租户数据隔离 + API Key 全生命周期管理（签发/吊销/配额，支付闭环就绪）。V0.4：商业化基础设施（API Key 认证 + 每日配额 + 用量计量 + 经营指标）+ Docker 一键部署。V0.3：37 字段（P0+P1 子集）+ 4 维度评分体系 + Apple 风格 UI + 多维度决策卡片。
 
 ## 启动
 
@@ -21,14 +21,36 @@ docker build -t snackvalue . && docker run -p 8765:8765 -v snackvalue-data:/data
 
 SQLite 数据与 RapidOCR 模型缓存都在 `/data` 卷中，容器重建不丢数据。环境变量样例见 `.env.example`。
 
-## 商业化模式（V0.4）
+## 商业化模式（V0.4 / V0.5）
 
-默认**开放模式**：不配置任何商业化环境变量时，行为与 V0.3 完全一致（本地免费、不认证、不限量）。托管部署时通过环境变量开启：
+默认**开放模式**：不配置任何商业化环境变量时，行为与 V0.3 完全一致（本地免费、不认证、不限量）。托管部署时开启：
 
-- `SNACKVALUE_API_KEYS=key-a,key-b` — 开启 API Key 认证，所有 `/api/*`（除 `/api/health`）要求 `X-API-Key` 请求头，无效返回 401
+- `SNACKVALUE_API_KEYS=key-a,key-b` — 环境变量方式的 API Key 认证；所有 `/api/*`（除 `/api/health`）要求 `X-API-Key` 请求头，无效返回 401
 - `SNACKVALUE_DAILY_QUOTA=50` — 计量端点（compare / extract / extract_text）每 key 每日上限，超额返回 429
 - 用量按 key × 日 × 端点落在 SQLite `api_usage` 表，`GET /api/usage` 实时对账
-- `GET /api/stats` 输出经营指标（累计评估、活跃天数、折扣节省额等）
+- `GET /api/stats` 输出当前租户的省钱报告数据（累计评估、活跃天数、折扣节省额等）
+
+### 多租户与 Key 生命周期（V0.5）
+
+每个 API Key 就是一个租户：历史记录、价格基线、用户偏好、统计全部按 key 隔离；开放模式的数据归 `anonymous` 租户，老库数据迁移时自动归入。
+
+**DB 托管 key**（支付闭环对接点——支付成功回调调签发接口即可下发）：
+
+```bash
+# 管理端（需配置 SNACKVALUE_ADMIN_KEY，请求头 X-Admin-Key）
+POST   /api/admin/keys          # 签发：{label, tier: free|pro, daily_quota}
+GET    /api/admin/keys          # 列表（脱敏）+ 今日/累计用量
+DELETE /api/admin/keys/{key}    # 吊销，立即生效
+GET    /api/admin/stats         # 全局经营指标（跨租户）
+
+# 或用运维 CLI（直接操作 SQLite，无需服务在线）
+python scripts/issue_key.py issue --label "用户小王" --tier pro --quota 500
+python scripts/issue_key.py list
+python scripts/issue_key.py revoke sv-xxxx
+python scripts/issue_key.py purge --yes   # 清空全部 key，回到开放模式
+```
+
+商用保护：`api_keys` 表一旦有过记录（含已吊销），服务保持认证模式——吊销最后一个 key 不会把付费墙拆掉；回开放模式必须显式 `purge`。per-key `daily_quota` 优先于全局 `SNACKVALUE_DAILY_QUOTA`。
 
 商业模式与路线图详见 `docs/commercialization/2026-07-13-v04-commercialization-roadmap.md`。
 
@@ -136,6 +158,7 @@ pytest tests/ -v
 | `SNACKVALUE_DAILY_QUOTA` | 0 | 计量端点每 key 每日上限；0 = 不限（V0.4）|
 | `SNACKVALUE_CORS_ORIGINS` | 空 | 允许跨域来源，逗号分隔；空 = 不开 CORS（V0.4）|
 | `SNACKVALUE_DB_PATH` | 空 | SQLite 路径覆盖；空 = 项目内 `data/`（V0.4）|
+| `SNACKVALUE_ADMIN_KEY` | 空 | 管理端密钥；空 = `/api/admin/*` 整体关闭（V0.5）|
 
 ## 数据库迁移
 
